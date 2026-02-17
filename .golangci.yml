@@ -1,0 +1,52 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - misspell
+    - unconvert
+    - goconst
+    - gocritic
+    - gocyclo
+    - revive
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+    govet:
+      enable:
+        - shadow
+    gocyclo:
+      min-complexity: 20
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+    revive:
+      rules:
+        - name: package-comments
+          disabled: true
+        - name: unused-parameter
+          disabled: true
+
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gocyclo
+          - errcheck
+      - path: examples/
+        linters:
+          - errcheck
+          - gocritic
+          - govet
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
