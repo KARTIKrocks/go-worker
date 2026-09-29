@@ -55,10 +55,11 @@ type Pool struct {
 	cfg Config
 
 	jobs     chan jobEnvelope
+	quit     chan struct{} // closed when Close begins; unblocks waiting submitters
 	ctx      context.Context
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
-	submitMu sync.Mutex // guards concurrent submit vs close(p.jobs)
+	submitMu sync.RWMutex // submitters hold RLock while sending; Close takes Lock to close(p.jobs)
 
 	closed  atomic.Bool
 	paused  atomic.Bool
@@ -71,11 +72,12 @@ type Pool struct {
 	middleware []Middleware
 }
 
-// jobEnvelope wraps a job with its submission context and an optional result channel.
+// jobEnvelope wraps a job with its submission context and an optional
+// completion callback.
 type jobEnvelope struct {
-	job      Job
-	ctx      context.Context
-	resultCh chan<- error // nil for fire-and-forget
+	job  Job
+	ctx  context.Context
+	done func(err error) // nil for fire-and-forget; called exactly once with the final result
 }
 
 // NewPool creates and starts a new worker pool.
@@ -106,6 +108,7 @@ func NewPool(opts ...Option) (*Pool, error) {
 
 	p.cfg = cfg
 	p.jobs = make(chan jobEnvelope, cfg.QueueSize)
+	p.quit = make(chan struct{})
 	p.ctx, p.cancel = context.WithCancel(context.Background())
 	p.metrics.startTime = time.Now()
 
@@ -129,7 +132,7 @@ func (p *Pool) Submit(fn func(ctx context.Context) error) error {
 
 // SubmitJob submits a [Job] for processing. It blocks if the queue is full.
 func (p *Pool) SubmitJob(job Job) error {
-	return p.submitCtx(context.Background(), job, nil)
+	return p.submit(context.Background(), context.Background(), job, nil, true)
 }
 
 // SubmitWait submits a function and blocks until it completes, returning its error.
@@ -138,9 +141,10 @@ func (p *Pool) SubmitWait(ctx context.Context, fn func(ctx context.Context) erro
 }
 
 // SubmitJobWait submits a [Job] and blocks until it completes.
+// If ctx expires first, ctx.Err() is returned and the job keeps running.
 func (p *Pool) SubmitJobWait(ctx context.Context, job Job) error {
 	ch := make(chan error, 1)
-	if err := p.submitCtx(ctx, job, ch); err != nil {
+	if err := p.submit(ctx, ctx, job, func(err error) { ch <- err }, true); err != nil {
 		return err
 	}
 	select {
@@ -159,62 +163,49 @@ func (p *Pool) TrySubmit(fn func(ctx context.Context) error) error {
 
 // TrySubmitJob attempts to submit a [Job] without blocking.
 func (p *Pool) TrySubmitJob(job Job) error {
-	p.submitMu.Lock()
-	defer p.submitMu.Unlock()
-	if p.closed.Load() {
-		return ErrPoolClosed
-	}
-	select {
-	case p.jobs <- jobEnvelope{job: job, ctx: context.Background()}:
-		p.metrics.JobsSubmitted.Add(1)
-		p.metrics.QueueLength.Add(1)
-		return nil
-	default:
-		return ErrPoolFull
-	}
+	return p.submit(context.Background(), context.Background(), job, nil, false)
 }
 
 // SubmitContext submits a [Job] with a context. If the context expires before
 // the job can be enqueued, the context error is returned. If the queue is full,
 // it blocks until space is available, the context expires, or the pool closes.
 func (p *Pool) SubmitContext(ctx context.Context, job Job) error {
-	return p.submitCtx(ctx, job, nil)
+	return p.submit(ctx, ctx, job, nil, true)
 }
 
-// submitCtx is the core submit path.
-func (p *Pool) submitCtx(ctx context.Context, job Job, resultCh chan<- error) error {
-	p.submitMu.Lock()
+// submit is the core submit path. waitCtx bounds how long a blocking submit
+// waits for queue space; jobCtx is the parent of the context the job runs
+// with. If done is non-nil and submit returns nil, done is called exactly once
+// with the job's final result (or [ErrPoolClosed] if the job is dropped during
+// a timed-out shutdown).
+func (p *Pool) submit(waitCtx, jobCtx context.Context, job Job, done func(error), block bool) error {
+	// Holding the read lock for the whole send guarantees Close cannot close
+	// p.jobs underneath us. Close unblocks waiting senders via p.quit first.
+	p.submitMu.RLock()
+	defer p.submitMu.RUnlock()
 	if p.closed.Load() {
-		p.submitMu.Unlock()
 		return ErrPoolClosed
 	}
 
-	envelope := jobEnvelope{
-		job:      job,
-		ctx:      ctx,
-		resultCh: resultCh,
+	envelope := jobEnvelope{job: job, ctx: jobCtx, done: done}
+
+	if !block {
+		select {
+		case p.jobs <- envelope:
+			p.metrics.JobsSubmitted.Add(1)
+			return nil
+		default:
+			return ErrPoolFull
+		}
 	}
 
-	// Hold submitMu only for the non-blocking attempt to prevent send-on-closed-channel.
-	select {
-	case p.jobs <- envelope:
-		p.submitMu.Unlock()
-		p.metrics.JobsSubmitted.Add(1)
-		p.metrics.QueueLength.Add(1)
-		return nil
-	default:
-	}
-	p.submitMu.Unlock()
-
-	// Blocking path: queue was full, wait for space or cancellation.
 	select {
 	case p.jobs <- envelope:
 		p.metrics.JobsSubmitted.Add(1)
-		p.metrics.QueueLength.Add(1)
 		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-p.ctx.Done():
+	case <-waitCtx.Done():
+		return waitCtx.Err()
+	case <-p.quit:
 		return ErrPoolClosed
 	}
 }
@@ -224,6 +215,12 @@ func (p *Pool) submitCtx(ctx context.Context, job Job, resultCh chan<- error) er
 func (p *Pool) Pause() {
 	p.pauseMu.Lock()
 	defer p.pauseMu.Unlock()
+	// A closing pool must be able to drain, so Pause is a no-op once Close
+	// has started. Close sets closed before calling Resume, so this check
+	// under pauseMu cannot miss it.
+	if p.closed.Load() {
+		return
+	}
 	if !p.paused.Load() {
 		p.pauseCh = make(chan struct{})
 		p.paused.Store(true)
@@ -258,12 +255,15 @@ func (p *Pool) IsClosed() bool {
 
 // Snapshot returns a point-in-time copy of pool metrics.
 func (p *Pool) Snapshot() MetricsSnapshot {
-	return p.metrics.Snapshot()
+	s := p.metrics.Snapshot()
+	s.QueueLength = int32(p.QueueLength()) //nolint:gosec // bounded by QueueSize
+	return s
 }
 
-// QueueLength returns the current number of jobs in the queue.
+// QueueLength returns the current number of jobs in the queue. Submitters
+// blocked waiting for queue space are not counted.
 func (p *Pool) QueueLength() int {
-	return int(p.metrics.QueueLength.Load())
+	return len(p.jobs)
 }
 
 // ActiveWorkers returns the number of workers currently processing a job.
@@ -278,7 +278,8 @@ func (p *Pool) Close() error {
 }
 
 // CloseWithTimeout gracefully shuts down the pool. If timeout > 0 and workers
-// don't finish in time, remaining jobs are cancelled via context.
+// don't finish in time, in-flight jobs are cancelled via context and jobs still
+// in the queue are dropped; waiters on dropped jobs receive [ErrPoolClosed].
 func (p *Pool) CloseWithTimeout(timeout time.Duration) error {
 	if p.closed.Swap(true) {
 		return nil // already closed
@@ -288,12 +289,14 @@ func (p *Pool) CloseWithTimeout(timeout time.Duration) error {
 		p.logger.Info("pool shutting down")
 	}
 
+	// Unblock submitters waiting on a full queue so they release submitMu.
+	close(p.quit)
+
 	// Resume if paused so workers can drain.
 	p.Resume()
 
-	// Close the jobs channel under submitMu to prevent send-on-closed-channel
-	// races with concurrent submitters. Setting closed=true above ensures new
-	// submitters see ErrPoolClosed before touching the channel.
+	// Close the jobs channel under the write lock: no submitter can be
+	// mid-send, and setting closed=true above makes new ones bail out.
 	p.submitMu.Lock()
 	close(p.jobs)
 	p.submitMu.Unlock()
@@ -319,6 +322,14 @@ func (p *Pool) CloseWithTimeout(timeout time.Duration) error {
 
 	p.cancel()
 
+	// Workers exit early on cancellation, leaving jobs in the queue. Fail
+	// them so nobody waits forever on a job that will never run.
+	for env := range p.jobs {
+		if env.done != nil {
+			env.done(ErrPoolClosed)
+		}
+	}
+
 	if p.logger != nil {
 		p.logger.Info("pool stopped")
 	}
@@ -339,11 +350,9 @@ func (p *Pool) worker(id int) {
 	}()
 
 	for {
-		// Block while paused. pauseCh is closed when not paused.
-		p.pauseMu.Lock()
-		ch := p.pauseCh
-		p.pauseMu.Unlock()
-		<-ch
+		if !p.waitUnpaused() {
+			return
+		}
 
 		select {
 		case <-p.ctx.Done():
@@ -352,18 +361,38 @@ func (p *Pool) worker(id int) {
 			if !ok {
 				return
 			}
-			p.metrics.QueueLength.Add(-1)
+			// select picks randomly among ready cases, so a force-cancelled
+			// pool can still hand us a job; drop it rather than run it.
+			if p.ctx.Err() != nil {
+				if envelope.done != nil {
+					envelope.done(ErrPoolClosed)
+				}
+				return
+			}
 			p.metrics.ActiveWorkers.Add(1)
 
 			err := p.processJob(envelope)
 
 			p.metrics.ActiveWorkers.Add(-1)
 
-			if envelope.resultCh != nil {
-				envelope.resultCh <- err
-				close(envelope.resultCh)
+			if envelope.done != nil {
+				envelope.done(err)
 			}
 		}
+	}
+}
+
+// waitUnpaused blocks while the pool is paused. It returns false if the pool
+// is force-cancelled while waiting.
+func (p *Pool) waitUnpaused() bool {
+	p.pauseMu.Lock()
+	ch := p.pauseCh
+	p.pauseMu.Unlock()
+	select {
+	case <-ch:
+		return true
+	case <-p.ctx.Done():
+		return false
 	}
 }
 
@@ -372,10 +401,12 @@ func (p *Pool) processJob(env jobEnvelope) (finalErr error) {
 	start := time.Now()
 	job := env.job
 
-	// Derive job context from the pool's context so that pool cancellation
-	// (e.g. CloseWithTimeout) reaches in-flight jobs.
+	// Derive the job context from the submitter's context, and also cancel it
+	// when the pool is force-cancelled (e.g. CloseWithTimeout).
 	ctx, jobCancel := context.WithCancel(env.ctx)
 	defer jobCancel()
+	stop := context.AfterFunc(p.ctx, jobCancel)
+	defer stop()
 
 	if p.hooks.OnJobStart != nil {
 		p.hooks.OnJobStart(job)
@@ -395,18 +426,6 @@ func (p *Pool) processJob(env jobEnvelope) (finalErr error) {
 		ctx, cancel = context.WithTimeout(ctx, p.cfg.JobTimeout)
 		defer cancel()
 	}
-
-	// Start pool-context watcher AFTER ctx is finalized to avoid a race
-	// on the ctx variable.
-	poolDone := p.ctx.Done()
-	ctxDone := ctx.Done()
-	go func() {
-		select {
-		case <-poolDone:
-			jobCancel()
-		case <-ctxDone:
-		}
-	}()
 
 	maxAttempts := p.cfg.MaxRetries + 1
 
@@ -434,19 +453,27 @@ func (p *Pool) processJob(env jobEnvelope) (finalErr error) {
 					"delay", delay, "error", finalErr)
 			}
 
-			timer := time.NewTimer(delay)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				finalErr = ctx.Err()
-				return
-			case <-timer.C:
+			if err := sleepCtx(ctx, delay); err != nil {
+				finalErr = err
+				break
 			}
 		}
 	}
 
 	p.recordResult(job, finalErr, time.Since(start))
 	return finalErr
+}
+
+// sleepCtx waits for d or until ctx is done, returning ctx.Err() in the latter case.
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 // retryDelay returns the delay before the retry following the given attempt,

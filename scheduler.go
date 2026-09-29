@@ -31,17 +31,21 @@ type Schedule interface {
 	Next(after time.Time) time.Time
 }
 
-// IntervalSchedule fires at fixed intervals.
+// IntervalSchedule fires at fixed intervals. A non-positive Interval never fires.
 type IntervalSchedule struct {
 	Interval time.Duration
 }
 
 // Next implements [Schedule].
 func (s *IntervalSchedule) Next(after time.Time) time.Time {
+	if s.Interval <= 0 {
+		return time.Time{}
+	}
 	return after.Add(s.Interval)
 }
 
 // FixedTimeSchedule fires at a start time, then repeats at a fixed interval.
+// A non-positive Interval fires once at Start.
 type FixedTimeSchedule struct {
 	Start    time.Time
 	Interval time.Duration
@@ -51,6 +55,9 @@ type FixedTimeSchedule struct {
 func (s *FixedTimeSchedule) Next(after time.Time) time.Time {
 	if after.Before(s.Start) {
 		return s.Start
+	}
+	if s.Interval <= 0 {
+		return time.Time{}
 	}
 	elapsed := after.Sub(s.Start)
 	periods := int64(elapsed / s.Interval)
@@ -256,13 +263,17 @@ type scheduledTask struct {
 	name     string
 	job      Job
 	schedule Schedule
-	next     time.Time
 	running  atomic.Int32
 	overlap  OverlapPolicy
 	queued   atomic.Int32
 
-	mu     sync.Mutex // protects cancel and stats fields
+	// ctx is cancelled when the task is removed, replaced, or the scheduler
+	// stops. All runs of the task share it.
+	ctx    context.Context
 	cancel context.CancelFunc
+
+	mu   sync.Mutex // protects next and the stats fields
+	next time.Time
 
 	paused  atomic.Bool
 	maxRuns int
@@ -346,7 +357,8 @@ func NewScheduler(pool *Pool, opts ...SchedulerOption) *Scheduler {
 	return s
 }
 
-// Schedule adds a job with a custom [Schedule].
+// Schedule adds a job with a custom [Schedule]. Scheduling a name that is
+// already registered replaces that task and cancels its in-flight runs.
 func (s *Scheduler) Schedule(name string, sched Schedule, job Job, opts ...TaskOption) *Scheduler {
 	task := &scheduledTask{
 		name:     name,
@@ -361,7 +373,12 @@ func (s *Scheduler) Schedule(name string, sched Schedule, job Job, opts ...TaskO
 	if task.runNow {
 		task.next = time.Now()
 	}
+	task.ctx, task.cancel = context.WithCancel(s.ctx)
+
 	s.tasksMu.Lock()
+	if old, ok := s.tasks[name]; ok {
+		old.cancel()
+	}
 	s.tasks[name] = task
 	s.tasksMu.Unlock()
 	return s
@@ -432,11 +449,7 @@ func (s *Scheduler) Remove(name string) {
 	s.tasksMu.Lock()
 	defer s.tasksMu.Unlock()
 	if t, ok := s.tasks[name]; ok {
-		t.mu.Lock()
-		if t.cancel != nil {
-			t.cancel()
-		}
-		t.mu.Unlock()
+		t.cancel()
 		delete(s.tasks, name)
 	}
 }
@@ -519,17 +532,19 @@ func (s *Scheduler) tick(now time.Time) {
 		if task.maxRuns > 0 && task.runCnt.Load() >= int64(task.maxRuns) {
 			continue
 		}
+
+		task.mu.Lock()
 		if task.next.IsZero() || now.Before(task.next) {
+			task.mu.Unlock()
 			continue
 		}
+		// This slot is consumed whether the task runs, is skipped, or is queued.
+		task.next = task.nextRun(now)
+		task.mu.Unlock()
 
-		isRunning := task.running.Load() > 0
-		if isRunning {
+		if task.running.Load() > 0 {
 			switch task.overlap {
 			case OverlapSkip:
-				s.tasksMu.Lock()
-				task.next = task.schedule.Next(now)
-				s.tasksMu.Unlock()
 				continue
 			case OverlapQueue:
 				if task.queued.Load() < maxQueuedPerTask {
@@ -541,17 +556,18 @@ func (s *Scheduler) tick(now time.Time) {
 			}
 		}
 
-		// Schedule next
-		s.tasksMu.Lock()
-		next := task.schedule.Next(now)
-		if task.jitter > 0 {
-			next = next.Add(time.Duration(rand.Int63n(int64(task.jitter)))) //nolint:gosec // scheduling jitter is not security-sensitive
-		}
-		task.next = next
-		s.tasksMu.Unlock()
-
 		go s.executeTask(task)
 	}
+}
+
+// nextRun returns the task's next run time after now, with jitter applied.
+// The caller must hold t.mu.
+func (t *scheduledTask) nextRun(now time.Time) time.Time {
+	next := t.schedule.Next(now)
+	if t.jitter > 0 && !next.IsZero() {
+		next = next.Add(time.Duration(rand.Int63n(int64(t.jitter)))) //nolint:gosec // scheduling jitter is not security-sensitive
+	}
+	return next
 }
 
 func (s *Scheduler) executeTask(task *scheduledTask) {
@@ -559,7 +575,7 @@ func (s *Scheduler) executeTask(task *scheduledTask) {
 	task.runCnt.Add(1)
 	defer func() {
 		task.running.Add(-1)
-		if task.queued.Load() > 0 {
+		if task.queued.Load() > 0 && task.ctx.Err() == nil {
 			task.queued.Add(-1)
 			go s.executeTask(task)
 		}
@@ -572,13 +588,8 @@ func (s *Scheduler) executeTask(task *scheduledTask) {
 		s.onTaskStart(task.name)
 	}
 
-	ctx, cancel := context.WithCancel(s.ctx)
-	task.mu.Lock()
-	task.cancel = cancel
-	task.mu.Unlock()
-
 	start := time.Now()
-	err := s.pool.SubmitJobWait(ctx, task.job)
+	err := s.pool.SubmitJobWait(task.ctx, task.job)
 	dur := time.Since(start)
 
 	task.mu.Lock()
@@ -600,7 +611,8 @@ func (s *Scheduler) executeTask(task *scheduledTask) {
 }
 
 // Stop stops the scheduler and waits for the loop goroutine to exit.
-// In-flight tasks submitted to the pool continue independently.
+// The contexts of in-flight task runs are cancelled, but Stop does not wait
+// for those runs to return.
 func (s *Scheduler) Stop() {
 	if !s.running.Swap(false) {
 		return
