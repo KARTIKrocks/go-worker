@@ -13,6 +13,10 @@ import (
 
 // ---------- DailySchedule ----------
 
+// inDSTGap is a clock time that does not exist on spring-forward days in the
+// zones tested here (clocks jump 02:00 -> 03:00).
+const inDSTGap = "02:30"
+
 func TestDailySchedule_DST(t *testing.T) {
 	ny, err := time.LoadLocation("America/New_York")
 	if err != nil {
@@ -39,18 +43,31 @@ func TestDailySchedule_TimeInDSTGap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// time.Date resolves gap times backwards in zones west of UTC and
+	// forwards in zones east of it; both must give the same result.
+	berlin, _ := time.LoadLocation("Europe/Berlin")
+	sydney, _ := time.LoadLocation("Australia/Sydney")
 	edt := time.FixedZone("EDT", -4*3600)
 	cdt := time.FixedZone("CDT", -4*3600)
+	cest := time.FixedZone("CEST", 2*3600)
+	aedt := time.FixedZone("AEDT", 11*3600)
 	for name, tc := range map[string]struct {
-		clock       string
+		clocks      []string
 		after, want time.Time
 	}{
 		// 2026-03-08 02:00 -> 03:00 in New York: 02:30 does not exist.
-		"gap": {"02:30", time.Date(2026, 3, 8, 0, 0, 0, 0, ny), time.Date(2026, 3, 8, 3, 30, 0, 0, edt)},
+		"gap": {[]string{inDSTGap}, time.Date(2026, 3, 8, 0, 0, 0, 0, ny), time.Date(2026, 3, 8, 3, 30, 0, 0, edt)},
 		// 2026-03-08 00:00 -> 01:00 in Havana: 00:30 does not exist.
-		"gap at midnight": {"00:30", time.Date(2026, 3, 7, 12, 0, 0, 0, havana), time.Date(2026, 3, 8, 1, 30, 0, 0, cdt)},
+		"gap at midnight": {[]string{"00:30"}, time.Date(2026, 3, 7, 12, 0, 0, 0, havana), time.Date(2026, 3, 8, 1, 30, 0, 0, cdt)},
+		// 2026-03-29 02:00 -> 03:00 in Berlin (east of UTC).
+		"gap east of UTC": {[]string{inDSTGap}, time.Date(2026, 3, 29, 0, 0, 0, 0, berlin), time.Date(2026, 3, 29, 3, 30, 0, 0, cest)},
+		// 2026-10-04 02:00 -> 03:00 in Sydney.
+		"gap southern hemisphere": {[]string{inDSTGap}, time.Date(2026, 10, 4, 0, 0, 0, 0, sydney), time.Date(2026, 10, 4, 3, 30, 0, 0, aedt)},
+		// 02:30 shifts to 03:30, which is after 03:15: the earliest wins.
+		"shifted time after a later clock time": {[]string{inDSTGap, "03:15"}, time.Date(2026, 3, 8, 0, 0, 0, 0, ny), time.Date(2026, 3, 8, 3, 15, 0, 0, edt)},
+		"same, east of UTC":                     {[]string{inDSTGap, "03:15"}, time.Date(2026, 3, 29, 0, 0, 0, 0, berlin), time.Date(2026, 3, 29, 3, 15, 0, 0, cest)},
 	} {
-		s, _ := NewDailySchedule(tc.clock)
+		s, _ := NewDailySchedule(tc.clocks...)
 		if got := s.Next(tc.after); !got.Equal(tc.want) {
 			t.Errorf("%s: got %v, want %v", name, got, tc.want)
 		}
@@ -80,6 +97,17 @@ func TestCron_DSTGapDoesNotHang(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatalf("%q: Next hung in the DST gap", expr)
 		}
+	}
+}
+
+func TestOnceSchedule_NextIsStrictlyAfter(t *testing.T) {
+	at := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	s := &OnceSchedule{At: at}
+	if got := s.Next(at.Add(-time.Nanosecond)); !got.Equal(at) {
+		t.Fatalf("before At: got %v, want %v", got, at)
+	}
+	if got := s.Next(at); !got.IsZero() {
+		t.Fatalf("Next(At) = %v, want zero: it must be strictly after its argument", got)
 	}
 }
 
@@ -293,9 +321,33 @@ func TestScheduler_QueueRespectsMaxRuns(t *testing.T) {
 	})
 }
 
-// Every Trigger that reports true must eventually run. (The narrow window
-// between a run's queue check and its slot release, handled in finishRun, is
-// too small to hit reliably here; this checks the overall invariant.)
+// The exact interleaving CI hit: a Trigger fails to claim the slot, the
+// running run then finishes and releases the slot seeing an empty queue,
+// and only then does the Trigger queue its run.
+func TestScheduler_QueueAfterSlotReleasedStillRuns(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		p := newTestPool(t)
+		s := NewScheduler(p)
+		defer s.Stop()
+		var runs atomic.Int32
+		s.EveryFunc("t", time.Hour, func(context.Context) error { runs.Add(1); return nil },
+			WithOverlapPolicy(OverlapQueue))
+		task := s.tasks["t"]
+
+		task.running.Store(1)  // run A holds the slot; the Trigger's claim fails
+		s.finishRun(task)      // A finishes, sees no queued run, releases
+		if !s.queueRun(task) { // the Trigger now queues
+			t.Fatal("queueRun rejected")
+		}
+		synctest.Wait()
+		if n := runs.Load(); n != 1 {
+			t.Fatalf("queued run ran %d times, want 1", n)
+		}
+	})
+}
+
+// Every Trigger that reports true must eventually run. This stress test is
+// what caught the queueRun race in CI; the test above pins it down exactly.
 func TestScheduler_AcceptedTriggersAllRun(t *testing.T) {
 	for range 50 {
 		synctest.Test(t, func(t *testing.T) {

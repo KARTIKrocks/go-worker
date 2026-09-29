@@ -354,7 +354,7 @@ func (s *Scheduler) dispatch(task *scheduledTask) bool {
 	if task.overlap == OverlapAllow {
 		task.running.Add(1)
 	} else if !task.running.CompareAndSwap(0, 1) {
-		return task.overlap == OverlapQueue && task.enqueue()
+		return task.overlap == OverlapQueue && s.queueRun(task)
 	}
 
 	if !task.claimRun() {
@@ -440,6 +440,21 @@ func (s *Scheduler) executeTask(task *scheduledTask) {
 	if s.onTaskEnd != nil {
 		s.callHook("OnTaskEnd", func() { s.onTaskEnd(task.name, err, dur) })
 	}
+}
+
+// queueRun queues a run behind the one holding the slot. The holder may
+// release the slot after our failed claim but before the run is queued, and
+// then miss it; so, like finishRun, re-check after writing: if the slot is
+// now free, take it and start the queued run ourselves. With both sides
+// writing then re-checking, at least one always sees the other's change.
+func (s *Scheduler) queueRun(task *scheduledTask) bool {
+	if !task.enqueue() {
+		return false
+	}
+	if task.running.CompareAndSwap(0, 1) {
+		s.finishRun(task) // holding the slot: hand it to the queued run
+	}
+	return true
 }
 
 // finishRun releases a finished run's slot, handing it straight to a queued

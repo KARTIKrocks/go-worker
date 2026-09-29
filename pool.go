@@ -196,6 +196,11 @@ func (p *Pool) submit(waitCtx, jobCtx context.Context, job Job, done func(error)
 		}
 	}
 
+	// select picks randomly among ready cases, so an already-done waitCtx
+	// could lose to a free queue slot; honour it first.
+	if err := waitCtx.Err(); err != nil {
+		return err
+	}
 	select {
 	case p.jobs <- envelope:
 		p.metrics.JobsSubmitted.Add(1)

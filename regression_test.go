@@ -38,6 +38,23 @@ func TestRegression_CloseWhileSubmitBlocked(t *testing.T) {
 	})
 }
 
+func TestRegression_SubmitContextCancelledNeverEnqueues(t *testing.T) {
+	p, _ := NewPool(WithWorkers(1), WithQueueSize(1000))
+	defer p.Close()
+	p.Pause() // keep anything enqueued in the queue so it can be counted
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	for range 500 {
+		// The queue has room, so select would pick send half the time.
+		if err := p.SubmitContext(ctx, JobFunc(func(context.Context) error { return nil })); !errors.Is(err, context.Canceled) {
+			t.Fatalf("got %v, want context.Canceled", err)
+		}
+	}
+	if n := p.QueueLength(); n != 0 {
+		t.Fatalf("%d jobs enqueued with a cancelled context", n)
+	}
+}
+
 func TestRegression_FutureWithRetries(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		p, err := NewPool(WithWorkers(1), WithMaxRetries(2), WithRetryDelay(time.Millisecond))

@@ -84,7 +84,9 @@ func (d *Debouncer) SubmitFunc(fn func(context.Context) error) {
 	d.Submit(JobFunc(fn))
 }
 
-// Cancel cancels the pending debounced job.
+// Cancel cancels the pending debounced job. Like [time.Timer.Stop], it cannot
+// recall a job whose quiet period has already ended: once the timer fires,
+// the job is no longer pending and is submitted even if Cancel runs meanwhile.
 func (d *Debouncer) Cancel() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
