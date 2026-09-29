@@ -201,8 +201,9 @@ sched := worker.NewScheduler(pool)
 // Fixed interval
 sched.EveryFunc("cleanup", 5*time.Minute, cleanup)
 
-// Cron expression
-sched.CronFunc("report", "0 9 * * 1-5", generateReport)
+// Cron expression: *, ranges, lists, steps (*/15, 0-30/10),
+// names (MON-FRI, JAN) and macros (@daily, @hourly, ...)
+sched.CronFunc("report", "0 9 * * MON-FRI", generateReport)
 
 // Daily at specific times
 sched.DailyFunc("backup", []string{"02:00", "14:00"}, backup)
@@ -219,12 +220,12 @@ sched.EveryFunc("sync", time.Hour, syncData,
 )
 
 sched.Start()
-defer sched.Stop()
+defer sched.Stop() // permanent: a stopped scheduler cannot be restarted
 
 // Runtime control
 sched.Pause("sync")
 sched.Resume("sync")
-sched.Trigger("sync")  // manual fire
+sched.Trigger("sync")  // run now; respects pause, max runs and overlap policy
 sched.Remove("sync")
 info := sched.TaskInfo("cleanup")
 ```
