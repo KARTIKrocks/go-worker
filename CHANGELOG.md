@@ -58,6 +58,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `Config` and `Metrics` are no longer exported. Configure pools with the `With...` options and read metrics with `Pool.Snapshot()`, which returns the still-public `MetricsSnapshot`
+- **Breaking:** `Option` is now `func(*Pool)`; options are still created only with the `With...` functions
 - **Breaking:** `Scheduler.Stop` is permanent; `Start` after `Stop` does nothing
 - **Breaking:** `Scheduler.Trigger` respects the task's pause state, `WithMaxRuns` and overlap policy, and returns `false` when no run was started or queued
 - `RateLimiter.TrySubmit` returns `ErrRateLimited` (was `ErrPoolFull`) when no token is available, and `ErrLimiterStopped` (was `ErrPoolClosed`) after `Stop`; pool errors are passed through

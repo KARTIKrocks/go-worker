@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-// Config holds worker pool configuration. Use [Option] functions to set values.
-type Config struct {
+// config holds worker pool configuration, set through [Option] values.
+type config struct {
 	Workers       int
 	QueueSize     int
 	JobTimeout    time.Duration
@@ -19,7 +19,7 @@ type Config struct {
 	PanicHandler  func(job Job, recovered any)
 }
 
-func (c *Config) validate() error {
+func (c *config) validate() error {
 	if c.Workers < 1 {
 		return fmt.Errorf("workers must be >= 1, got %d", c.Workers)
 	}
@@ -44,76 +44,77 @@ func (c *Config) validate() error {
 	return nil
 }
 
-// Option configures a [Pool]. Pass to [NewPool].
-type Option func(p *Pool, c *Config)
+// Option configures a [Pool]. Pass to [NewPool]; create one with the With...
+// functions.
+type Option func(p *Pool)
 
 // WithWorkers sets the number of worker goroutines. Default: 4.
 func WithWorkers(n int) Option {
-	return func(_ *Pool, c *Config) { c.Workers = n }
+	return func(p *Pool) { p.cfg.Workers = n }
 }
 
 // WithQueueSize sets the buffered channel capacity for the job queue. Default: 100.
 func WithQueueSize(n int) Option {
-	return func(_ *Pool, c *Config) { c.QueueSize = n }
+	return func(p *Pool) { p.cfg.QueueSize = n }
 }
 
 // WithJobTimeout sets the maximum duration of each attempt of a job; with
 // retries, every attempt gets its own timeout, and a timed-out attempt is
 // retried. Zero means no timeout. Default: 0.
 func WithJobTimeout(d time.Duration) Option {
-	return func(_ *Pool, c *Config) { c.JobTimeout = d }
+	return func(p *Pool) { p.cfg.JobTimeout = d }
 }
 
 // WithMaxRetries sets how many times a failed job is retried. Default: 0 (no retries).
 // Errors wrapped with [Permanent] and panics are never retried.
 func WithMaxRetries(n int) Option {
-	return func(_ *Pool, c *Config) { c.MaxRetries = n }
+	return func(p *Pool) { p.cfg.MaxRetries = n }
 }
 
 // WithRetryDelay sets the base delay between retries. Default: 1s.
 func WithRetryDelay(d time.Duration) Option {
-	return func(_ *Pool, c *Config) { c.RetryDelay = d }
+	return func(p *Pool) { p.cfg.RetryDelay = d }
 }
 
 // WithRetryBackoff enables exponential backoff on retries. Default: true.
 func WithRetryBackoff(enabled bool) Option {
-	return func(_ *Pool, c *Config) { c.RetryBackoff = enabled }
+	return func(p *Pool) { p.cfg.RetryBackoff = enabled }
 }
 
 // WithMaxRetryDelay caps the delay between retries, with or without
 // exponential backoff. Zero means no cap. Default: 0.
 func WithMaxRetryDelay(d time.Duration) Option {
-	return func(_ *Pool, c *Config) { c.MaxRetryDelay = d }
+	return func(p *Pool) { p.cfg.MaxRetryDelay = d }
 }
 
 // WithRetryJitter randomizes each retry delay by subtracting up to fraction
 // of it (0 to 1), so retries of many failing jobs do not happen in lockstep.
 // Default: 0 (no jitter).
 func WithRetryJitter(fraction float64) Option {
-	return func(_ *Pool, c *Config) { c.RetryJitter = fraction }
+	return func(p *Pool) { p.cfg.RetryJitter = fraction }
 }
 
 // WithPanicHandler sets a handler called when a job panics.
 // The handler receives the job and the recovered value. The job's error is a
 // [*PanicError], which also carries the stack trace.
 func WithPanicHandler(fn func(job Job, recovered any)) Option {
-	return func(_ *Pool, c *Config) { c.PanicHandler = fn }
+	return func(p *Pool) { p.cfg.PanicHandler = fn }
 }
 
 // WithLogger sets the structured logger for the pool.
 func WithLogger(l Logger) Option {
-	return func(p *Pool, _ *Config) { p.logger = l }
+	return func(p *Pool) { p.logger = l }
 }
 
 // WithHooks sets lifecycle hooks for the pool.
 func WithHooks(h Hooks) Option {
-	return func(p *Pool, _ *Config) { p.hooks = h }
+	return func(p *Pool) { p.hooks = h }
 }
 
 // WithMiddleware appends middleware to the processing chain.
 // Middleware is applied in the order given (first added = outermost wrapper).
 func WithMiddleware(mw ...Middleware) Option {
-	return func(p *Pool, _ *Config) { p.middleware = append(p.middleware, mw...) }
+	return func(p *Pool) { p.middleware = append(p.middleware, mw...) }
 }
 
 // Logger is a structured logging interface compatible with [log/slog].

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/KARTIKrocks/go-worker"
@@ -74,26 +75,28 @@ func TestSubmitWait(t *testing.T) {
 }
 
 func TestTrySubmit_Full(t *testing.T) {
-	pool, err := worker.NewPool(worker.WithWorkers(1), worker.WithQueueSize(0))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
+	synctest.Test(t, func(t *testing.T) {
+		pool, err := worker.NewPool(worker.WithWorkers(1), worker.WithQueueSize(0))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer pool.Close()
 
-	// Block the one worker
-	blocker := make(chan struct{})
-	_ = pool.Submit(func(ctx context.Context) error {
-		<-blocker
-		return nil
+		// Block the one worker
+		blocker := make(chan struct{})
+		_ = pool.Submit(func(ctx context.Context) error {
+			<-blocker
+			return nil
+		})
+
+		// Now queue is 0 and worker is busy
+		time.Sleep(10 * time.Millisecond)
+		err = pool.TrySubmit(func(ctx context.Context) error { return nil })
+		if !errors.Is(err, worker.ErrPoolFull) {
+			t.Fatalf("expected ErrPoolFull, got %v", err)
+		}
+		close(blocker)
 	})
-
-	// Now queue is 0 and worker is busy
-	time.Sleep(10 * time.Millisecond)
-	err = pool.TrySubmit(func(ctx context.Context) error { return nil })
-	if !errors.Is(err, worker.ErrPoolFull) {
-		t.Fatalf("expected ErrPoolFull, got %v", err)
-	}
-	close(blocker)
 }
 
 func TestSubmit_AfterClose(t *testing.T) {
@@ -208,33 +211,35 @@ func TestJobTimeout(t *testing.T) {
 // ---------- Pause / Resume ----------
 
 func TestPauseResume(t *testing.T) {
-	pool, err := worker.NewPool(worker.WithWorkers(2), worker.WithQueueSize(10))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
+	synctest.Test(t, func(t *testing.T) {
+		pool, err := worker.NewPool(worker.WithWorkers(2), worker.WithQueueSize(10))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer pool.Close()
 
-	pool.Pause()
-	if !pool.IsPaused() {
-		t.Fatal("expected paused")
-	}
+		pool.Pause()
+		if !pool.IsPaused() {
+			t.Fatal("expected paused")
+		}
 
-	var ran atomic.Bool
-	_ = pool.Submit(func(ctx context.Context) error {
-		ran.Store(true)
-		return nil
+		var ran atomic.Bool
+		_ = pool.Submit(func(ctx context.Context) error {
+			ran.Store(true)
+			return nil
+		})
+
+		time.Sleep(50 * time.Millisecond)
+		if ran.Load() {
+			t.Fatal("job should not have run while paused")
+		}
+
+		pool.Resume()
+		time.Sleep(50 * time.Millisecond)
+		if !ran.Load() {
+			t.Fatal("job should have run after resume")
+		}
 	})
-
-	time.Sleep(50 * time.Millisecond)
-	if ran.Load() {
-		t.Fatal("job should not have run while paused")
-	}
-
-	pool.Resume()
-	time.Sleep(50 * time.Millisecond)
-	if !ran.Load() {
-		t.Fatal("job should have run after resume")
-	}
 }
 
 // ---------- Metrics ----------
@@ -447,27 +452,29 @@ func TestFuture_Error(t *testing.T) {
 // ---------- Scheduler ----------
 
 func TestScheduler_Every(t *testing.T) {
-	pool, err := worker.NewPool(worker.WithWorkers(2))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
+	synctest.Test(t, func(t *testing.T) {
+		pool, err := worker.NewPool(worker.WithWorkers(2))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer pool.Close()
 
-	var count atomic.Int32
-	sched := worker.NewScheduler(pool)
+		var count atomic.Int32
+		sched := worker.NewScheduler(pool)
 
-	sched.EveryFunc("counter", 100*time.Millisecond, func(ctx context.Context) error {
-		count.Add(1)
-		return nil
-	}, worker.WithRunImmediate())
+		sched.EveryFunc("counter", 100*time.Millisecond, func(ctx context.Context) error {
+			count.Add(1)
+			return nil
+		}, worker.WithRunImmediate())
 
-	sched.Start()
-	time.Sleep(500 * time.Millisecond)
-	sched.Stop()
+		sched.Start()
+		time.Sleep(500 * time.Millisecond)
+		sched.Stop()
 
-	if got := count.Load(); got < 2 {
-		t.Fatalf("expected at least 2 runs, got %d", got)
-	}
+		if got := count.Load(); got < 2 {
+			t.Fatalf("expected at least 2 runs, got %d", got)
+		}
+	})
 }
 
 func TestScheduler_Remove(t *testing.T) {
@@ -563,22 +570,24 @@ func TestHooks(t *testing.T) {
 // ---------- CloseWithTimeout ----------
 
 func TestCloseWithTimeout(t *testing.T) {
-	pool, err := worker.NewPool(worker.WithWorkers(1), worker.WithJobTimeout(0))
-	if err != nil {
-		t.Fatal(err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		pool, err := worker.NewPool(worker.WithWorkers(1), worker.WithJobTimeout(0))
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	_ = pool.Submit(func(ctx context.Context) error {
-		<-ctx.Done()
-		return nil
+		_ = pool.Submit(func(ctx context.Context) error {
+			<-ctx.Done()
+			return nil
+		})
+
+		time.Sleep(10 * time.Millisecond)
+		start := time.Now()
+		pool.CloseWithTimeout(50 * time.Millisecond)
+		elapsed := time.Since(start)
+
+		if elapsed > 200*time.Millisecond {
+			t.Fatalf("close took too long: %v", elapsed)
+		}
 	})
-
-	time.Sleep(10 * time.Millisecond)
-	start := time.Now()
-	pool.CloseWithTimeout(50 * time.Millisecond)
-	elapsed := time.Since(start)
-
-	if elapsed > 200*time.Millisecond {
-		t.Fatalf("close took too long: %v", elapsed)
-	}
 }

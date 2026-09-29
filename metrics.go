@@ -5,25 +5,24 @@ import (
 	"time"
 )
 
-// Metrics holds atomic counters for pool statistics.
-// Use [Metrics.Snapshot] to get an approximate point-in-time view.
-type Metrics struct {
+// metrics holds atomic counters for pool statistics. [Pool.Snapshot] returns
+// an approximate point-in-time copy.
+type metrics struct {
 	JobsSubmitted atomic.Int64
 	JobsCompleted atomic.Int64
 	JobsFailed    atomic.Int64
 	JobsRetried   atomic.Int64
 	JobsPanicked  atomic.Int64
 	ActiveWorkers atomic.Int32
-	QueueLength   atomic.Int32 // not maintained by Pool; see [Pool.QueueLength]
 	TotalDuration atomic.Int64 // nanoseconds
 	startTime     time.Time    // when the pool was created
 }
 
-// Snapshot returns an approximate point-in-time copy of all metrics.
+// snapshot returns an approximate point-in-time copy of the counters.
 // Individual counters are read atomically, but the snapshot as a whole
 // is not taken under a single lock, so values may be slightly inconsistent
-// under concurrent load.
-func (m *Metrics) Snapshot() MetricsSnapshot {
+// under concurrent load. QueueLength is filled in by [Pool.Snapshot].
+func (m *metrics) snapshot() MetricsSnapshot {
 	return MetricsSnapshot{
 		JobsSubmitted: m.JobsSubmitted.Load(),
 		JobsCompleted: m.JobsCompleted.Load(),
@@ -31,7 +30,6 @@ func (m *Metrics) Snapshot() MetricsSnapshot {
 		JobsRetried:   m.JobsRetried.Load(),
 		JobsPanicked:  m.JobsPanicked.Load(),
 		ActiveWorkers: m.ActiveWorkers.Load(),
-		QueueLength:   m.QueueLength.Load(),
 		TotalDuration: time.Duration(m.TotalDuration.Load()),
 		Elapsed:       time.Since(m.startTime),
 	}
