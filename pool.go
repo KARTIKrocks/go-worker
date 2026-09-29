@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -86,7 +87,6 @@ func NewPool(opts ...Option) (*Pool, error) {
 	cfg := Config{
 		Workers:      4,
 		QueueSize:    100,
-		JobTimeout:   30 * time.Second,
 		MaxRetries:   0,
 		RetryDelay:   time.Second,
 		RetryBackoff: true,
@@ -340,11 +340,11 @@ func (p *Pool) worker(id int) {
 	defer p.wg.Done()
 
 	if p.hooks.OnWorkerStart != nil {
-		p.hooks.OnWorkerStart(id)
+		p.callHook("OnWorkerStart", func() { p.hooks.OnWorkerStart(id) })
 	}
 	defer func() {
 		if p.hooks.OnWorkerStop != nil {
-			p.hooks.OnWorkerStop(id)
+			p.callHook("OnWorkerStop", func() { p.hooks.OnWorkerStop(id) })
 		}
 	}()
 
@@ -422,7 +422,7 @@ func (p *Pool) processJob(env jobEnvelope) (finalErr error) {
 	defer stop()
 
 	if p.hooks.OnJobStart != nil {
-		p.hooks.OnJobStart(job)
+		p.callHook("OnJobStart", func() { p.hooks.OnJobStart(job) })
 	}
 
 	// Build the processing function with middleware chain
@@ -433,31 +433,31 @@ func (p *Pool) processJob(env jobEnvelope) (finalErr error) {
 		run = v(run)
 	}
 
-	// Apply job timeout
-	if p.cfg.JobTimeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, p.cfg.JobTimeout)
-		defer cancel()
-	}
-
 	maxAttempts := p.cfg.MaxRetries + 1
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		finalErr = p.safeRun(run, ctx, job)
+		var panicked bool
+		panicked, finalErr = p.runAttempt(run, ctx, job)
 
 		if finalErr == nil {
 			break
 		}
 
-		// Don't retry on context cancellation
+		// Retrying cannot fix a permanent error or a panic (a bug). Checked
+		// before cancellation so these errors are never masked by ctx.Err().
+		// panicked, not errors.Is(ErrJobPanic): a job may return another
+		// pool's PanicError without having panicked itself.
+		if panicked || isPermanent(finalErr) {
+			break
+		}
+
+		// Don't retry once the job itself is cancelled (submitter or pool).
 		if ctx.Err() != nil {
 			finalErr = ctx.Err()
 			break
 		}
 
 		if attempt < maxAttempts {
-			p.metrics.JobsRetried.Add(1)
-
 			delay := p.retryDelay(attempt)
 
 			if p.logger != nil {
@@ -470,6 +470,8 @@ func (p *Pool) processJob(env jobEnvelope) (finalErr error) {
 				finalErr = err
 				break
 			}
+			// Count the retry only once it is actually going to run.
+			p.metrics.JobsRetried.Add(1)
 		}
 	}
 
@@ -477,29 +479,14 @@ func (p *Pool) processJob(env jobEnvelope) (finalErr error) {
 	return finalErr
 }
 
-// sleepCtx waits for d or until ctx is done, returning ctx.Err() in the latter case.
-func sleepCtx(ctx context.Context, d time.Duration) error {
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
+// runAttempt runs one attempt of the job, bounded by JobTimeout.
+func (p *Pool) runAttempt(run func(context.Context) error, ctx context.Context, job Job) (panicked bool, err error) {
+	if p.cfg.JobTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, p.cfg.JobTimeout)
+		defer cancel()
 	}
-}
-
-// retryDelay returns the delay before the retry following the given attempt,
-// applying exponential backoff and the MaxRetryDelay cap when configured.
-func (p *Pool) retryDelay(attempt int) time.Duration {
-	delay := p.cfg.RetryDelay
-	if p.cfg.RetryBackoff {
-		delay *= 1 << min(attempt-1, 30)
-	}
-	if p.cfg.MaxRetryDelay > 0 && delay > p.cfg.MaxRetryDelay {
-		delay = p.cfg.MaxRetryDelay
-	}
-	return delay
+	return p.safeRun(run, ctx, job)
 }
 
 // recordResult updates metrics and fires the completion hooks for a finished job.
@@ -509,29 +496,51 @@ func (p *Pool) recordResult(job Job, err error, duration time.Duration) {
 	if err != nil {
 		p.metrics.JobsFailed.Add(1)
 		if p.hooks.OnJobFailed != nil {
-			p.hooks.OnJobFailed(job, err, duration)
+			p.callHook("OnJobFailed", func() { p.hooks.OnJobFailed(job, err, duration) })
 		}
 		return
 	}
 	p.metrics.JobsCompleted.Add(1)
 	if p.hooks.OnJobComplete != nil {
-		p.hooks.OnJobComplete(job, duration)
+		p.callHook("OnJobComplete", func() { p.hooks.OnJobComplete(job, duration) })
 	}
 }
 
-// safeRun runs the function with panic recovery.
-func (p *Pool) safeRun(fn func(context.Context) error, ctx context.Context, job Job) (err error) {
+// safeRun runs the function with panic recovery, reporting whether it panicked.
+func (p *Pool) safeRun(fn func(context.Context) error, ctx context.Context, job Job) (panicked bool, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("%w: %v", ErrJobPanic, r)
+			perr := &PanicError{Value: r, Stack: debug.Stack()}
+			panicked, err = true, perr
 			p.metrics.JobsPanicked.Add(1)
 			if p.cfg.PanicHandler != nil {
-				p.cfg.PanicHandler(job, r)
+				p.callHook("PanicHandler", func() { p.cfg.PanicHandler(job, r) })
 			}
-			if p.logger != nil {
-				p.logger.Error("job panicked", "recovered", r)
-			}
+			p.logError("job panicked", "recovered", r, "stack", string(perr.Stack))
 		}
 	}()
-	return fn(ctx)
+	return false, fn(ctx)
+}
+
+// callHook runs a user callback, recovering a panic so a faulty hook cannot
+// kill the worker goroutine and with it the whole process. The panic is
+// logged if a logger is configured.
+func (p *Pool) callHook(name string, fn func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			p.logError("hook panicked", "hook", name, "recovered", r, "stack", string(debug.Stack()))
+		}
+	}()
+	fn()
+}
+
+// logError logs at error level from inside panic recovery, where a panic
+// from the logger itself would escape and crash the process, so such a
+// panic is dropped.
+func (p *Pool) logError(msg string, args ...any) {
+	if p.logger == nil {
+		return
+	}
+	defer func() { _ = recover() }()
+	p.logger.Error(msg, args...)
 }

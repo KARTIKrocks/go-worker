@@ -170,9 +170,11 @@ func TestRegression_PauseDuringClose(t *testing.T) {
 func TestRegression_RetryCancelRecordsFailure(t *testing.T) {
 	var failed atomic.Int32
 	p, _ := NewPool(WithWorkers(1), WithMaxRetries(3), WithRetryDelay(time.Second),
-		WithJobTimeout(20*time.Millisecond),
 		WithHooks(Hooks{OnJobFailed: func(Job, error, time.Duration) { failed.Add(1) }}))
-	err := p.SubmitWait(context.Background(), func(context.Context) error { return errors.New("x") })
+	// The submitter's context expires during the first retry delay.
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	err := p.SubmitWait(ctx, func(context.Context) error { return errors.New("x") })
 	_ = p.Close()
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("got %v, want DeadlineExceeded", err)

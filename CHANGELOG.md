@@ -11,8 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `ErrRateLimited` and `ErrLimiterStopped` sentinel errors for `RateLimiter`
 - `Debouncer.Flush` and `Throttler.Force` return the submit error
+- `Permanent(err)` marks an error as not retryable
+- `WithRetryJitter(fraction)` randomizes retry delays
+- `PanicError` carries the panic value and stack trace; it matches `ErrJobPanic`
 
 ### Fixed
+
+- Retry backoff could overflow into a negative delay with large delays and many retries; it now saturates
+- A panic in a hook or in the panic handler crashed the process; it is now recovered and logged
+- `WithMaxRetryDelay` accepted negative values
+- A panic or `Permanent` error returned as the job's context was cancelled was reported as `context.Canceled`
+- `JobsRetried` counted retries that were cancelled during the backoff delay and never ran
 
 - `Debouncer`: a timer callback that had already fired could run after `Cancel`/`Flush` or a newer `Submit` and submit a job early
 - `Debouncer`: `Flush` in leading mode re-submitted the job that had already run
@@ -44,7 +53,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `RateLimiter.TrySubmit` returns `ErrRateLimited` (was `ErrPoolFull`) when no token is available, and `ErrLimiterStopped` (was `ErrPoolClosed`) after `Stop`; pool errors are passed through
 - Skipped `Group` functions (group already cancelled) now add `context.Canceled` to `WaitAll`
-- `Group`/`ErrorGroup` functions are now subject to the pool's `JobTimeout` (default 30s)
+- `Group`/`ErrorGroup` functions are now subject to the pool's `JobTimeout`
+- **Breaking:** the default `JobTimeout` is now 0 (no timeout); it was 30s, which silently cancelled long jobs
+- **Breaking:** `JobTimeout` now applies to each attempt instead of to all attempts plus retry delays, and a timed-out attempt is retried
+- **Breaking:** panicking jobs are no longer retried
+- Job panics now return a `*PanicError` (still matches `ErrJobPanic`; the message is unchanged)
 - Re-scheduling an existing task name cancels the previous task's in-flight runs
 - Per-job pool-cancellation watcher goroutine replaced with `context.AfterFunc`
 

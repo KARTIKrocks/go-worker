@@ -15,6 +15,7 @@ type Config struct {
 	RetryDelay    time.Duration
 	MaxRetryDelay time.Duration // 0 means no cap
 	RetryBackoff  bool
+	RetryJitter   float64 // fraction of each retry delay to randomize, in [0, 1]
 	PanicHandler  func(job Job, recovered any)
 }
 
@@ -34,6 +35,12 @@ func (c *Config) validate() error {
 	if c.RetryDelay < 0 {
 		return fmt.Errorf("retry delay must be >= 0, got %v", c.RetryDelay)
 	}
+	if c.MaxRetryDelay < 0 {
+		return fmt.Errorf("max retry delay must be >= 0, got %v", c.MaxRetryDelay)
+	}
+	if !(c.RetryJitter >= 0 && c.RetryJitter <= 1) { // written this way to also reject NaN
+		return fmt.Errorf("retry jitter must be in [0, 1], got %v", c.RetryJitter)
+	}
 	return nil
 }
 
@@ -50,13 +57,15 @@ func WithQueueSize(n int) Option {
 	return func(_ *Pool, c *Config) { c.QueueSize = n }
 }
 
-// WithJobTimeout sets the maximum duration for a single job execution.
-// Zero means no timeout. Default: 30s.
+// WithJobTimeout sets the maximum duration of each attempt of a job; with
+// retries, every attempt gets its own timeout, and a timed-out attempt is
+// retried. Zero means no timeout. Default: 0.
 func WithJobTimeout(d time.Duration) Option {
 	return func(_ *Pool, c *Config) { c.JobTimeout = d }
 }
 
 // WithMaxRetries sets how many times a failed job is retried. Default: 0 (no retries).
+// Errors wrapped with [Permanent] and panics are never retried.
 func WithMaxRetries(n int) Option {
 	return func(_ *Pool, c *Config) { c.MaxRetries = n }
 }
@@ -71,14 +80,22 @@ func WithRetryBackoff(enabled bool) Option {
 	return func(_ *Pool, c *Config) { c.RetryBackoff = enabled }
 }
 
-// WithMaxRetryDelay caps the maximum delay between retries when using
+// WithMaxRetryDelay caps the delay between retries, with or without
 // exponential backoff. Zero means no cap. Default: 0.
 func WithMaxRetryDelay(d time.Duration) Option {
 	return func(_ *Pool, c *Config) { c.MaxRetryDelay = d }
 }
 
+// WithRetryJitter randomizes each retry delay by subtracting up to fraction
+// of it (0 to 1), so retries of many failing jobs do not happen in lockstep.
+// Default: 0 (no jitter).
+func WithRetryJitter(fraction float64) Option {
+	return func(_ *Pool, c *Config) { c.RetryJitter = fraction }
+}
+
 // WithPanicHandler sets a handler called when a job panics.
-// The handler receives the job and the recovered value.
+// The handler receives the job and the recovered value. The job's error is a
+// [*PanicError], which also carries the stack trace.
 func WithPanicHandler(fn func(job Job, recovered any)) Option {
 	return func(_ *Pool, c *Config) { c.PanicHandler = fn }
 }
@@ -107,7 +124,9 @@ type Logger interface {
 	Error(msg string, args ...any)
 }
 
-// Hooks contains lifecycle callbacks. All fields are optional.
+// Hooks contains lifecycle callbacks. All fields are optional. A panic in a
+// hook is recovered (and logged if a [Logger] is set) so it cannot crash the
+// worker.
 type Hooks struct {
 	OnJobStart    func(job Job)
 	OnJobComplete func(job Job, duration time.Duration)
