@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -100,7 +101,7 @@ func NewPool(opts ...Option) (*Pool, error) {
 	}
 
 	if err := cfg.validate(); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
+		return nil, fmt.Errorf("%w: %w", ErrInvalidConfig, err)
 	}
 
 	p.cfg = cfg
@@ -384,8 +385,8 @@ func (p *Pool) processJob(env jobEnvelope) (finalErr error) {
 	run := func(ctx context.Context) error {
 		return job.Process(ctx)
 	}
-	for i := len(p.middleware) - 1; i >= 0; i-- {
-		run = p.middleware[i](run)
+	for _, v := range slices.Backward(p.middleware) {
+		run = v(run)
 	}
 
 	// Apply job timeout
@@ -425,14 +426,7 @@ func (p *Pool) processJob(env jobEnvelope) (finalErr error) {
 		if attempt < maxAttempts {
 			p.metrics.JobsRetried.Add(1)
 
-			delay := p.cfg.RetryDelay
-			if p.cfg.RetryBackoff {
-				delay *= 1 << min(attempt-1, 30)
-			}
-			// Cap delay at MaxRetryDelay if configured.
-			if p.cfg.MaxRetryDelay > 0 && delay > p.cfg.MaxRetryDelay {
-				delay = p.cfg.MaxRetryDelay
-			}
+			delay := p.retryDelay(attempt)
 
 			if p.logger != nil {
 				p.logger.Warn("job failed, retrying",
@@ -451,22 +445,38 @@ func (p *Pool) processJob(env jobEnvelope) (finalErr error) {
 		}
 	}
 
-	duration := time.Since(start)
+	p.recordResult(job, finalErr, time.Since(start))
+	return finalErr
+}
+
+// retryDelay returns the delay before the retry following the given attempt,
+// applying exponential backoff and the MaxRetryDelay cap when configured.
+func (p *Pool) retryDelay(attempt int) time.Duration {
+	delay := p.cfg.RetryDelay
+	if p.cfg.RetryBackoff {
+		delay *= 1 << min(attempt-1, 30)
+	}
+	if p.cfg.MaxRetryDelay > 0 && delay > p.cfg.MaxRetryDelay {
+		delay = p.cfg.MaxRetryDelay
+	}
+	return delay
+}
+
+// recordResult updates metrics and fires the completion hooks for a finished job.
+func (p *Pool) recordResult(job Job, err error, duration time.Duration) {
 	p.metrics.TotalDuration.Add(int64(duration))
 
-	if finalErr != nil {
+	if err != nil {
 		p.metrics.JobsFailed.Add(1)
 		if p.hooks.OnJobFailed != nil {
-			p.hooks.OnJobFailed(job, finalErr, duration)
+			p.hooks.OnJobFailed(job, err, duration)
 		}
-	} else {
-		p.metrics.JobsCompleted.Add(1)
-		if p.hooks.OnJobComplete != nil {
-			p.hooks.OnJobComplete(job, duration)
-		}
+		return
 	}
-
-	return finalErr
+	p.metrics.JobsCompleted.Add(1)
+	if p.hooks.OnJobComplete != nil {
+		p.hooks.OnJobComplete(job, duration)
+	}
 }
 
 // safeRun runs the function with panic recovery.

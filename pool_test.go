@@ -41,7 +41,7 @@ func TestSubmit(t *testing.T) {
 
 	var count atomic.Int32
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		if err := pool.Submit(func(ctx context.Context) error {
 			count.Add(1)
 			return nil
@@ -245,7 +245,7 @@ func TestMetrics(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		_ = pool.SubmitWait(context.Background(), func(ctx context.Context) error {
 			return nil
 		})
@@ -361,7 +361,7 @@ func TestGroup_CollectsAllErrors(t *testing.T) {
 
 	g := worker.NewGroup(pool)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		g.Go(func(ctx context.Context) error {
 			return fmt.Errorf("error %d", i)
 		})

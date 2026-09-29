@@ -4,27 +4,62 @@ run:
   timeout: 5m
   tests: true
 
+# Report every occurrence. The defaults (max-same-issues: 3) hide duplicates,
+# which makes a lint failure look smaller than it is.
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
 linters:
   enable:
     - errcheck
     - govet
     - staticcheck
     - unused
+    - ineffassign
     - misspell
-    - unconvert
-    - goconst
     - gocritic
     - gocyclo
+    - goconst
     - revive
-
+    - prealloc
+    # Security scanning: jobs run arbitrary user code on shared goroutines.
+    - gosec
+    # Error-handling discipline: %w-wrapped errors must be compared with
+    # errors.Is/As, and sentinel errors must be named Err*.
+    - errorlint
+    - errname
+    - nilerr
+    - nilnesserr
+    # Concurrency and context correctness — the core invariants of the pool,
+    # scheduler and futures.
+    - contextcheck
+    - fatcontext
+    - noctx
+    - durationcheck
+    # Submit/dispatch hot path is expected to stay allocation-light
+    # (see bench_test.go).
+    - perfsprint
+    - makezero
+    - wastedassign
+    - unconvert
+    # Correctness footguns.
+    - asasalint
+    - reassign
+    - usestdlibvars
+    - copyloopvar
+    - intrange
+    # Keep //nolint directives specific and explained.
+    - nolintlint
   settings:
     errcheck:
+      # An unchecked type assertion panics; deliberate `_ =` discards still pass.
       check-type-assertions: true
     govet:
       enable:
         - shadow
     gocyclo:
-      min-complexity: 20
+      min-complexity: 15
     goconst:
       min-len: 3
       min-occurrences: 3
@@ -34,19 +69,35 @@ linters:
           disabled: true
         - name: unused-parameter
           disabled: true
-
+    nolintlint:
+      require-explanation: true
+      require-specific: true
   exclusions:
     rules:
-      - path: _test\.go
-        linters:
-          - gocyclo
+      # Tests may assert on unwrapped errors, ignore teardown errors and use
+      # simple formatting; none of that ships to consumers.
+      - linters:
           - errcheck
-      - path: examples/
-        linters:
+          - errorlint
+          - gocyclo
+          - gosec
+          - intrange
+          - noctx
+          - perfsprint
+        path: _test\.go
+      # Examples are illustrative and not part of the public API surface.
+      - linters:
           - errcheck
           - gocritic
+          - gosec
           - govet
+          - perfsprint
+        path: examples/
 
-issues:
-  max-issues-per-linter: 0
-  max-same-issues: 0
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    gofmt:
+      simplify: true

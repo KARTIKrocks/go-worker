@@ -1,7 +1,11 @@
 # go-worker
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/KARTIKrocks/go-worker.svg)](https://pkg.go.dev/github.com/KARTIKrocks/go-worker)
+[![CI](https://github.com/KARTIKrocks/go-worker/actions/workflows/ci.yml/badge.svg)](https://github.com/KARTIKrocks/go-worker/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/KARTIKrocks/go-worker)](https://goreportcard.com/report/github.com/KARTIKrocks/go-worker)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/KARTIKrocks/go-worker)](go.mod)
+[![License](https://img.shields.io/github/license/KARTIKrocks/go-worker)](LICENSE)
+[![GitHub tag](https://img.shields.io/github/v/tag/KARTIKrocks/go-worker)](https://github.com/KARTIKrocks/go-worker/releases)
 
 A high-performance, zero-dependency worker pool for Go with retries, scheduling, and observability.
 
