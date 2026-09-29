@@ -14,7 +14,7 @@ type Metrics struct {
 	JobsRetried   atomic.Int64
 	JobsPanicked  atomic.Int64
 	ActiveWorkers atomic.Int32
-	QueueLength   atomic.Int32
+	QueueLength   atomic.Int32 // not maintained by Pool; see [Pool.QueueLength]
 	TotalDuration atomic.Int64 // nanoseconds
 	startTime     time.Time    // when the pool was created
 }

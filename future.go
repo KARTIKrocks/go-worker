@@ -12,52 +12,75 @@ import (
 //	})
 //	result, err := future.Await(ctx)
 type Future[T any] struct {
-	ch   chan result[T]
-	val  result[T]
-	once sync.Once
-}
+	done chan struct{} // closed once value and err are final
 
-type result[T any] struct {
-	value T
-	err   error
+	mu       sync.Mutex // guards the fields below
+	attempt  int        // incremented per attempt; only the latest may set value
+	resolved bool
+	value    T
+	err      error
 }
 
 // SubmitTyped submits a typed function and returns a [Future] for the result.
+// With pool retries enabled, the Future resolves with the outcome of the final
+// attempt. If fn panics, the Future resolves with an error wrapping [ErrJobPanic].
 func SubmitTyped[T any](pool *Pool, fn func(ctx context.Context) (T, error)) *Future[T] {
-	f := &Future[T]{
-		ch: make(chan result[T], 1),
-	}
+	f := &Future[T]{done: make(chan struct{})}
 
 	job := JobFunc(func(ctx context.Context) error {
+		// Middleware may run fn on another goroutine and return early, so an
+		// abandoned attempt can finish after a newer one or after resolve.
+		// Tagging attempts keeps such late results from leaking into the Future.
+		n := f.beginAttempt()
 		val, err := fn(ctx)
-		f.ch <- result[T]{value: val, err: err}
+		f.setValue(n, val)
 		return err
 	})
 
-	if err := pool.SubmitJob(job); err != nil {
-		var zero T
-		f.ch <- result[T]{value: zero, err: err}
+	err := pool.submit(context.Background(), context.Background(), job, f.resolve, true)
+	if err != nil {
+		f.resolve(err)
 	}
 
 	return f
 }
 
+// beginAttempt starts a new attempt, resetting value so a panicking attempt
+// resolves with the zero value, and returns the attempt's number.
+func (f *Future[T]) beginAttempt() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.attempt++
+	var zero T
+	if !f.resolved {
+		f.value = zero
+	}
+	return f.attempt
+}
+
+func (f *Future[T]) setValue(attempt int, v T) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.resolved && attempt == f.attempt {
+		f.value = v
+	}
+}
+
+func (f *Future[T]) resolve(err error) {
+	f.mu.Lock()
+	f.resolved = true
+	f.err = err
+	f.mu.Unlock()
+	close(f.done)
+}
+
 // Await blocks until the result is available or the context expires.
 func (f *Future[T]) Await(ctx context.Context) (T, error) {
-	// Fast path: result already cached.
-	if f.done() {
-		return f.val.value, f.val.err
-	}
-
 	select {
-	case r := <-f.ch:
-		f.once.Do(func() { f.val = r })
-		// Put it back so other callers / Done() can also read it.
-		select {
-		case f.ch <- r:
-		default:
-		}
-		return f.val.value, f.val.err
+	case <-f.done:
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		return f.value, f.err
 	case <-ctx.Done():
 		var zero T
 		return zero, ctx.Err()
@@ -66,19 +89,8 @@ func (f *Future[T]) Await(ctx context.Context) (T, error) {
 
 // Done reports whether the result is already available (non-blocking).
 func (f *Future[T]) Done() bool {
-	return f.done()
-}
-
-// done checks if the result has been consumed and cached.
-func (f *Future[T]) done() bool {
 	select {
-	case r := <-f.ch:
-		f.once.Do(func() { f.val = r })
-		// Put it back so subsequent calls can also read it.
-		select {
-		case f.ch <- r:
-		default:
-		}
+	case <-f.done:
 		return true
 	default:
 		return false

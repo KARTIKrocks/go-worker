@@ -32,30 +32,24 @@ func NewGroupContext(ctx context.Context, pool *Pool) *Group {
 }
 
 // Go submits a function to the group for concurrent execution.
-// The function receives the group's context, so group-level cancellation is visible.
+// The function's context is cancelled when the group's context is, when the
+// pool's job timeout expires, or when the pool is force-closed.
 func (g *Group) Go(fn func(ctx context.Context) error) {
 	g.wg.Add(1)
+	if err := g.pool.submit(g.ctx, g.ctx, groupJob(fn), g.finish, true); err != nil {
+		g.finish(err)
+	}
+}
 
-	job := JobFunc(func(_ context.Context) error {
-		defer g.wg.Done()
-		if err := g.ctx.Err(); err != nil {
-			return err
-		}
-		if err := fn(g.ctx); err != nil { //nolint:contextcheck // fn is documented to receive the group context
-			g.mu.Lock()
-			g.errors = append(g.errors, err)
-			g.mu.Unlock()
-			return err
-		}
-		return nil
-	})
-
-	if err := g.pool.SubmitContext(g.ctx, job); err != nil {
-		g.wg.Done()
+// finish records the final result of one function. The pool calls it exactly
+// once per job, after all retries, so the WaitGroup stays balanced.
+func (g *Group) finish(err error) {
+	if err != nil {
 		g.mu.Lock()
 		g.errors = append(g.errors, err)
 		g.mu.Unlock()
 	}
+	g.wg.Done()
 }
 
 // Wait blocks until all submitted functions complete and returns the first error.
@@ -111,29 +105,20 @@ func NewErrorGroupContext(ctx context.Context, pool *Pool) *ErrorGroup {
 // context is cancelled, signaling other functions to stop.
 func (g *ErrorGroup) Go(fn func(ctx context.Context) error) {
 	g.wg.Add(1)
+	if err := g.pool.submit(g.ctx, g.ctx, groupJob(fn), g.finish, true); err != nil {
+		g.finish(err)
+	}
+}
 
-	job := JobFunc(func(ctx context.Context) error {
-		defer g.wg.Done()
-		if err := g.ctx.Err(); err != nil {
-			return err
-		}
-		if err := fn(g.ctx); err != nil { //nolint:contextcheck // fn is documented to receive the group context
-			g.errOnce.Do(func() {
-				g.err = err
-				g.cancel()
-			})
-			return err
-		}
-		return nil
-	})
-
-	if err := g.pool.SubmitContext(g.ctx, job); err != nil {
-		g.wg.Done()
+// finish records the final result of one function; see [Group.finish].
+func (g *ErrorGroup) finish(err error) {
+	if err != nil {
 		g.errOnce.Do(func() {
 			g.err = err
 			g.cancel()
 		})
 	}
+	g.wg.Done()
 }
 
 // Wait blocks until all functions complete and returns the first error, if any.
@@ -147,4 +132,15 @@ func (g *ErrorGroup) Wait() error {
 // error or when Wait returns.
 func (g *ErrorGroup) Context() context.Context {
 	return g.ctx
+}
+
+// groupJob wraps fn so that it is skipped once the group has been cancelled.
+// The job context derives from the group context, so ctx.Err() covers that.
+func groupJob(fn func(ctx context.Context) error) Job {
+	return JobFunc(func(ctx context.Context) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return fn(ctx)
+	})
 }

@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `Close` could panic with "send on closed channel" when a submitter was blocked on a full queue
+- `SubmitTyped` with retries deadlocked the worker; the `Future` now resolves with the final attempt's result
+- `Future.Await` hung forever when the function panicked; it now returns an error wrapping `ErrJobPanic`
+- `Group`/`ErrorGroup`/`Batch` with retries called `wg.Done` once per attempt, making `Wait` return early
+- `Group`/`ErrorGroup` swallowed panics; they are now reported as errors wrapping `ErrJobPanic`
+- `Group`/`ErrorGroup`/`Batch` functions now receive the job context, so `JobTimeout` and forced shutdown apply
+- `CloseWithTimeout` dropped queued jobs without notifying waiters; `SubmitWait`, `Future` and groups now get `ErrPoolClosed`
+- `Pause` during `Close` hung shutdown; `Pause` is now a no-op once closing
+- `Pause` did not stop idle workers, which would still pick up the next submitted job
+- Jobs cancelled during a retry delay were not counted in metrics or passed to `OnJobFailed`
+- `FixedTimeSchedule` with a zero interval panicked with divide-by-zero; zero/negative intervals no longer fire repeatedly
+- `OverlapQueue` queued a run on every scheduler tick instead of once per missed slot
+- Scheduler leaked a context per task run; each task now has one context, cancelled by `Remove`, re-`Schedule`, or `Stop`
+- `Once` tasks with `WithJitter` ran on every tick after their first run
+- Data race between `Scheduler.TaskInfo` and the scheduler loop
+- `Ticker.Stop` blocked when the pool queue was full or paused
+- `QueueLength` could go transiently negative; it now reports the number of queued jobs exactly
+
+### Changed
+
+- Re-scheduling an existing task name cancels the previous task's in-flight runs
+- Per-job pool-cancellation watcher goroutine replaced with `context.AfterFunc`
+
 ## [0.0.1] - 2026-02-17
 
 ### Added

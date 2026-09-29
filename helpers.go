@@ -50,7 +50,7 @@ func (t *Ticker) run() {
 	defer t.wg.Done()
 
 	if t.runFirst {
-		_ = t.pool.SubmitJob(t.job)
+		t.submit()
 	}
 
 	ticker := time.NewTicker(t.interval)
@@ -61,12 +61,21 @@ func (t *Ticker) run() {
 		case <-t.ctx.Done():
 			return
 		case <-ticker.C:
-			_ = t.pool.SubmitJob(t.job)
+			t.submit()
 		}
 	}
 }
 
-// Stop stops the ticker and waits for the goroutine to exit.
+// submit enqueues the job. Waiting for queue space is bounded by the ticker's
+// context so Stop is never blocked behind a full or paused pool, but the job
+// itself runs detached from it: stopping the ticker does not cancel runs
+// that were already submitted.
+func (t *Ticker) submit() {
+	_ = t.pool.submit(t.ctx, context.Background(), t.job, nil, true)
+}
+
+// Stop stops the ticker and waits for the goroutine to exit. Runs already
+// submitted to the pool are not cancelled.
 func (t *Ticker) Stop() {
 	t.cancel()
 	t.wg.Wait()
