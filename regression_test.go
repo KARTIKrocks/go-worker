@@ -350,3 +350,21 @@ func TestRegression_FutureAsyncMiddlewareNoRace(t *testing.T) {
 		t.Fatalf("late attempt overwrote resolved value: got %d", v)
 	}
 }
+
+func TestRegression_OverlapQueueRespectsMaxRuns(t *testing.T) {
+	p, _ := NewPool(WithWorkers(2))
+	defer p.Close()
+	var runs atomic.Int32
+	s := NewScheduler(p, WithTickInterval(2*time.Millisecond))
+	s.EveryFunc("t", 10*time.Millisecond, func(context.Context) error {
+		runs.Add(1)
+		time.Sleep(50 * time.Millisecond)
+		return nil
+	}, WithRunImmediate(), WithOverlapPolicy(OverlapQueue), WithMaxRuns(2))
+	s.Start()
+	time.Sleep(300 * time.Millisecond)
+	s.Stop()
+	if n := runs.Load(); n != 2 {
+		t.Fatalf("task ran %d times, want 2 (WithMaxRuns)", n)
+	}
+}

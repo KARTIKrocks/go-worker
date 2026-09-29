@@ -141,7 +141,8 @@ func (p *Pool) SubmitWait(ctx context.Context, fn func(ctx context.Context) erro
 }
 
 // SubmitJobWait submits a [Job] and blocks until it completes.
-// If ctx expires first, ctx.Err() is returned and the job keeps running.
+// The job runs with a context derived from ctx, so cancelling ctx both stops
+// the wait (returning ctx.Err()) and cancels the job.
 func (p *Pool) SubmitJobWait(ctx context.Context, job Job) error {
 	ch := make(chan error, 1)
 	if err := p.submit(ctx, ctx, job, func(err error) { ch <- err }, true); err != nil {

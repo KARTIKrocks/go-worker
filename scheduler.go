@@ -529,7 +529,7 @@ func (s *Scheduler) tick(now time.Time) {
 		if task.paused.Load() {
 			continue
 		}
-		if task.maxRuns > 0 && task.runCnt.Load() >= int64(task.maxRuns) {
+		if task.maxRunsReached() {
 			continue
 		}
 
@@ -560,6 +560,11 @@ func (s *Scheduler) tick(now time.Time) {
 	}
 }
 
+// maxRunsReached reports whether the task has used up its WithMaxRuns limit.
+func (t *scheduledTask) maxRunsReached() bool {
+	return t.maxRuns > 0 && t.runCnt.Load() >= int64(t.maxRuns)
+}
+
 // nextRun returns the task's next run time after now, with jitter applied.
 // The caller must hold t.mu.
 func (t *scheduledTask) nextRun(now time.Time) time.Time {
@@ -575,7 +580,9 @@ func (s *Scheduler) executeTask(task *scheduledTask) {
 	task.runCnt.Add(1)
 	defer func() {
 		task.running.Add(-1)
-		if task.queued.Load() > 0 && task.ctx.Err() == nil {
+		if task.ctx.Err() != nil || task.maxRunsReached() {
+			task.queued.Store(0)
+		} else if task.queued.Load() > 0 {
 			task.queued.Add(-1)
 			go s.executeTask(task)
 		}
