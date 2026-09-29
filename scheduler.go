@@ -53,8 +53,8 @@ func (s *FixedTimeSchedule) Next(after time.Time) time.Time {
 		return s.Start
 	}
 	elapsed := after.Sub(s.Start)
-	periods := elapsed / s.Interval
-	return s.Start.Add((periods + 1) * s.Interval)
+	periods := int64(elapsed / s.Interval)
+	return s.Start.Add(time.Duration(periods+1) * s.Interval)
 }
 
 // OnceSchedule fires exactly once at a given time.
@@ -81,13 +81,13 @@ func (s *OnceSchedule) Next(after time.Time) time.Time {
 //
 // Supports *, */n, n-m, and comma-separated lists.
 type CronSchedule struct {
-	minutes    []int
-	hours      []int
-	days       []int
-	months     []int
-	weekdays   []int
-	expression string
-	allDays    bool // true when the day-of-month field was "*"
+	minutes     []int
+	hours       []int
+	days        []int
+	months      []int
+	weekdays    []int
+	expression  string
+	allDays     bool // true when the day-of-month field was "*"
 	allWeekdays bool // true when the day-of-week field was "*"
 }
 
@@ -261,8 +261,8 @@ type scheduledTask struct {
 	overlap  OverlapPolicy
 	queued   atomic.Int32
 
-	mu      sync.Mutex // protects cancel and stats fields
-	cancel  context.CancelFunc
+	mu     sync.Mutex // protects cancel and stats fields
+	cancel context.CancelFunc
 
 	paused  atomic.Bool
 	maxRuns int
@@ -545,7 +545,7 @@ func (s *Scheduler) tick(now time.Time) {
 		s.tasksMu.Lock()
 		next := task.schedule.Next(now)
 		if task.jitter > 0 {
-			next = next.Add(time.Duration(rand.Int63n(int64(task.jitter))))
+			next = next.Add(time.Duration(rand.Int63n(int64(task.jitter)))) //nolint:gosec // scheduling jitter is not security-sensitive
 		}
 		task.next = next
 		s.tasksMu.Unlock()
@@ -682,7 +682,7 @@ func (i *TaskInfo) SuccessRate() float64 {
 
 func parseCronField(field string, min, max int) ([]int, error) {
 	var result []int
-	for _, part := range strings.Split(field, ",") {
+	for part := range strings.SplitSeq(field, ",") {
 		part = strings.TrimSpace(part)
 		switch {
 		case part == "*":
@@ -698,21 +698,11 @@ func parseCronField(field string, min, max int) ([]int, error) {
 				result = append(result, i)
 			}
 		case strings.Contains(part, "-"):
-			bounds := strings.SplitN(part, "-", 2)
-			lo, err := strconv.Atoi(bounds[0])
+			vals, err := parseCronRange(part, min, max)
 			if err != nil {
-				return nil, fmt.Errorf("invalid range start in %q", part)
+				return nil, err
 			}
-			hi, err := strconv.Atoi(bounds[1])
-			if err != nil {
-				return nil, fmt.Errorf("invalid range end in %q", part)
-			}
-			if lo < min || hi > max || lo > hi {
-				return nil, fmt.Errorf("range %q out of bounds [%d, %d]", part, min, max)
-			}
-			for i := lo; i <= hi; i++ {
-				result = append(result, i)
-			}
+			result = append(result, vals...)
 		default:
 			val, err := strconv.Atoi(part)
 			if err != nil {
@@ -730,3 +720,23 @@ func parseCronField(field string, min, max int) ([]int, error) {
 	return result, nil
 }
 
+// parseCronRange parses an "n-m" cron range bounded by [min, max].
+func parseCronRange(part string, min, max int) ([]int, error) {
+	bounds := strings.SplitN(part, "-", 2)
+	lo, err := strconv.Atoi(bounds[0])
+	if err != nil {
+		return nil, fmt.Errorf("invalid range start in %q", part)
+	}
+	hi, err := strconv.Atoi(bounds[1])
+	if err != nil {
+		return nil, fmt.Errorf("invalid range end in %q", part)
+	}
+	if lo < min || hi > max || lo > hi {
+		return nil, fmt.Errorf("range %q out of bounds [%d, %d]", part, min, max)
+	}
+	result := make([]int, 0, hi-lo+1)
+	for i := lo; i <= hi; i++ {
+		result = append(result, i)
+	}
+	return result, nil
+}

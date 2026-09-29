@@ -41,7 +41,7 @@ func (g *Group) Go(fn func(ctx context.Context) error) {
 		if err := g.ctx.Err(); err != nil {
 			return err
 		}
-		if err := fn(g.ctx); err != nil {
+		if err := fn(g.ctx); err != nil { //nolint:contextcheck // fn is documented to receive the group context
 			g.mu.Lock()
 			g.errors = append(g.errors, err)
 			g.mu.Unlock()
@@ -117,7 +117,7 @@ func (g *ErrorGroup) Go(fn func(ctx context.Context) error) {
 		if err := g.ctx.Err(); err != nil {
 			return err
 		}
-		if err := fn(g.ctx); err != nil {
+		if err := fn(g.ctx); err != nil { //nolint:contextcheck // fn is documented to receive the group context
 			g.errOnce.Do(func() {
 				g.err = err
 				g.cancel()

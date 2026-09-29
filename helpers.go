@@ -237,11 +237,11 @@ func (t *Throttler) Reset() {
 
 // RateLimiter is a token-bucket rate limiter that wraps a worker pool.
 type RateLimiter struct {
-	pool     *Pool
-	tokens   chan struct{}
-	ctx      context.Context
-	cancel   context.CancelFunc
-	wg       sync.WaitGroup
+	pool   *Pool
+	tokens chan struct{}
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
 }
 
 // NewRateLimiter creates a rate limiter that allows n jobs per interval.
@@ -253,7 +253,7 @@ func NewRateLimiter(pool *Pool, n int, interval time.Duration) *RateLimiter {
 		ctx:    ctx,
 		cancel: cancel,
 	}
-	for i := 0; i < n; i++ {
+	for range n {
 		rl.tokens <- struct{}{}
 	}
 	rl.wg.Add(1)
@@ -271,7 +271,7 @@ func (rl *RateLimiter) refill(n int, interval time.Duration) {
 		case <-rl.ctx.Done():
 			return
 		case <-ticker.C:
-			for i := 0; i < n; i++ {
+			for range n {
 				select {
 				case rl.tokens <- struct{}{}:
 				default:
