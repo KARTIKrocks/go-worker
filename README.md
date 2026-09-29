@@ -257,12 +257,13 @@ debouncer.Submit(job) // only last one within 500ms runs
 
 // Throttler — at most one execution per interval
 throttler := worker.NewThrottler(pool, time.Second)
-throttler.Submit(job) // runs at most 1/sec
+ok := throttler.Submit(job) // runs at most 1/sec; false if throttled or rejected
 
 // RateLimiter — token bucket
 rl := worker.NewRateLimiter(pool, 10, time.Second) // 10 jobs/sec
-rl.Submit(ctx, job)
 defer rl.Stop()
+err := rl.Submit(ctx, job)     // waits for a token
+err = rl.TrySubmit(job)        // ErrRateLimited if no token is available
 ```
 
 ## Errors
@@ -272,6 +273,8 @@ errors.Is(err, worker.ErrPoolClosed)    // pool was closed
 errors.Is(err, worker.ErrPoolFull)      // queue is full (TrySubmit)
 errors.Is(err, worker.ErrJobPanic)      // job panicked
 errors.Is(err, worker.ErrInvalidConfig) // bad configuration
+errors.Is(err, worker.ErrRateLimited)   // no token available (RateLimiter.TrySubmit)
+errors.Is(err, worker.ErrLimiterStopped) // RateLimiter was stopped
 ```
 
 ## License

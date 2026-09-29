@@ -7,7 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ErrRateLimited` and `ErrLimiterStopped` sentinel errors for `RateLimiter`
+- `Debouncer.Flush` and `Throttler.Force` return the submit error
+
 ### Fixed
+
+- `Debouncer`: a timer callback that had already fired could run after `Cancel`/`Flush` or a newer `Submit` and submit a job early
+- `Debouncer`: `Flush` in leading mode re-submitted the job that had already run
+- `Throttler`: a late trailing timer could submit a stale job after `Reset`, or after `Submit`/`SubmitTrailing`/`Force` opened a new window; opening a window now drops the pending trailing job
+- `Debouncer` and `Throttler` no longer hold their lock while blocking on a full queue
+- `Throttler.Submit` returned `true` even when the pool rejected the job
+- `RateLimiter` lost a token whenever the pool rejected a job
+- `NewRateLimiter` with `n <= 0` blocked forever or panicked obscurely; `NewTicker` and `NewRateLimiter` now panic with a clear message on invalid arguments
 
 - `Close` could panic with "send on closed channel" when a submitter was blocked on a full queue
 - `SubmitTyped` with retries deadlocked the worker; the `Future` now resolves with the final attempt's result
@@ -29,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `RateLimiter.TrySubmit` returns `ErrRateLimited` (was `ErrPoolFull`) when no token is available, and `ErrLimiterStopped` (was `ErrPoolClosed`) after `Stop`; pool errors are passed through
+- Skipped `Group` functions (group already cancelled) now add `context.Canceled` to `WaitAll`
+- `Group`/`ErrorGroup` functions are now subject to the pool's `JobTimeout` (default 30s)
 - Re-scheduling an existing task name cancels the previous task's in-flight runs
 - Per-job pool-cancellation watcher goroutine replaced with `context.AfterFunc`
 
