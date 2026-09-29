@@ -31,8 +31,6 @@ A high-performance, zero-dependency worker pool for Go with retries, scheduling,
 go get github.com/KARTIKrocks/go-worker
 ```
 
-Requires Go 1.23+.
-
 ## Quick Start
 
 ```go
@@ -65,11 +63,12 @@ All configuration uses functional options:
 pool, err := worker.NewPool(
     worker.WithWorkers(8),           // goroutine count (default: 4)
     worker.WithQueueSize(500),       // buffered channel size (default: 100)
-    worker.WithJobTimeout(time.Minute), // per-job timeout (default: 30s, 0=none)
+    worker.WithJobTimeout(time.Minute), // timeout per attempt (default: 0=none)
     worker.WithMaxRetries(3),        // retry failed jobs (default: 0)
     worker.WithRetryDelay(time.Second), // base retry delay (default: 1s)
     worker.WithRetryBackoff(true),      // exponential backoff (default: true)
     worker.WithMaxRetryDelay(time.Minute), // cap retry delay (default: 0=no cap)
+    worker.WithRetryJitter(0.2),     // randomize retry delays by up to 20% (default: 0)
     worker.WithPanicHandler(func(job worker.Job, r any) {
         log.Printf("panic: %v", r)
     }),
@@ -84,6 +83,35 @@ pool, err := worker.NewPool(
     }),
 )
 ```
+
+## Retries and Panics
+
+With `WithMaxRetries(n)`, a failed job is retried up to `n` times with the configured delay, backoff and jitter. `WithJobTimeout` applies to each attempt separately. A job is not retried when:
+
+- it succeeds,
+- its context is cancelled (by the submitter or by a forced close),
+- it returns an error wrapped with `worker.Permanent`,
+- it panics (a panic is a bug, and retrying rarely helps).
+
+```go
+pool.Submit(func(ctx context.Context) error {
+    user, err := db.GetUser(ctx, id)
+    if errors.Is(err, sql.ErrNoRows) {
+        return worker.Permanent(err) // retrying will not help
+    }
+    return err // other errors are retried
+})
+```
+
+A panicking job returns a `*worker.PanicError` that matches `worker.ErrJobPanic` and includes the stack trace:
+
+```go
+if perr, ok := errors.AsType[*worker.PanicError](err); ok {
+    log.Printf("panic: %v\n%s", perr.Value, perr.Stack)
+}
+```
+
+Panics in hooks and in the panic handler are also recovered, so they can't crash the worker.
 
 ## Submitting Jobs
 
