@@ -149,6 +149,40 @@ func TestRetry_CancelledDuringDelayNotCountedAsRetry(t *testing.T) {
 	})
 }
 
+func TestSleepCtx_CancelledWinsOverTimer(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	for range 1000 {
+		// Both cases are ready; sleepCtx must still report the cancellation.
+		if err := sleepCtx(ctx, 0); !errors.Is(err, context.Canceled) {
+			t.Fatalf("got %v, want context.Canceled", err)
+		}
+	}
+}
+
+// panickyLogger panics on Error, which the pool calls from panic recovery.
+type panickyLogger struct{}
+
+func (panickyLogger) Debug(string, ...any) {}
+func (panickyLogger) Info(string, ...any)  {}
+func (panickyLogger) Warn(string, ...any)  {}
+func (panickyLogger) Error(string, ...any) { panic("logger bug") }
+
+func TestRetry_PanickingLoggerDuringRecovery(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		p, _ := NewPool(WithWorkers(1), WithLogger(panickyLogger{}),
+			WithHooks(Hooks{OnJobStart: func(Job) { panic("hook bug") }}))
+		defer p.Close()
+		err := p.SubmitWait(context.Background(), func(context.Context) error { panic("job bug") })
+		if !errors.Is(err, ErrJobPanic) {
+			t.Fatalf("got %v, want ErrJobPanic", err)
+		}
+		if err := p.SubmitWait(context.Background(), func(context.Context) error { return nil }); err != nil {
+			t.Fatalf("pool broken after logger panic: %v", err)
+		}
+	})
+}
+
 func TestRetry_DelayNoOverflow(t *testing.T) {
 	p := &Pool{cfg: Config{RetryDelay: 10 * time.Second, RetryBackoff: true}}
 	for attempt := 1; attempt <= 100; attempt++ {

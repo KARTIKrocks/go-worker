@@ -516,9 +516,7 @@ func (p *Pool) safeRun(fn func(context.Context) error, ctx context.Context, job 
 			if p.cfg.PanicHandler != nil {
 				p.callHook("PanicHandler", func() { p.cfg.PanicHandler(job, r) })
 			}
-			if p.logger != nil {
-				p.logger.Error("job panicked", "recovered", r, "stack", string(perr.Stack))
-			}
+			p.logError("job panicked", "recovered", r, "stack", string(perr.Stack))
 		}
 	}()
 	return false, fn(ctx)
@@ -529,9 +527,20 @@ func (p *Pool) safeRun(fn func(context.Context) error, ctx context.Context, job 
 // logged if a logger is configured.
 func (p *Pool) callHook(name string, fn func()) {
 	defer func() {
-		if r := recover(); r != nil && p.logger != nil {
-			p.logger.Error("hook panicked", "hook", name, "recovered", r, "stack", string(debug.Stack()))
+		if r := recover(); r != nil {
+			p.logError("hook panicked", "hook", name, "recovered", r, "stack", string(debug.Stack()))
 		}
 	}()
 	fn()
+}
+
+// logError logs at error level from inside panic recovery, where a panic
+// from the logger itself would escape and crash the process, so such a
+// panic is dropped.
+func (p *Pool) logError(msg string, args ...any) {
+	if p.logger == nil {
+		return
+	}
+	defer func() { _ = recover() }()
+	p.logger.Error(msg, args...)
 }

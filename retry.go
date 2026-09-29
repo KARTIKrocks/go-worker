@@ -76,14 +76,15 @@ func (p *Pool) retryDelay(attempt int) time.Duration {
 	return delay
 }
 
-// sleepCtx waits for d or until ctx is done, returning ctx.Err() in the latter case.
+// sleepCtx waits for d or until ctx is done, returning ctx.Err() if ctx is
+// done by the time it returns.
 func sleepCtx(ctx context.Context, d time.Duration) error {
 	timer := time.NewTimer(d)
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
 	case <-timer.C:
-		return nil
 	}
+	// select picks randomly when both are ready, so check ctx either way.
+	return ctx.Err()
 }

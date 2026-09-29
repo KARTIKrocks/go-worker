@@ -80,7 +80,7 @@ func WithRetryBackoff(enabled bool) Option {
 	return func(_ *Pool, c *Config) { c.RetryBackoff = enabled }
 }
 
-// WithMaxRetryDelay caps the maximum delay between retries when using
+// WithMaxRetryDelay caps the delay between retries, with or without
 // exponential backoff. Zero means no cap. Default: 0.
 func WithMaxRetryDelay(d time.Duration) Option {
 	return func(_ *Pool, c *Config) { c.MaxRetryDelay = d }
