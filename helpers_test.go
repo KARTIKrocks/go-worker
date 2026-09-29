@@ -299,3 +299,18 @@ func TestThrottler_NewWindowDropsStaleTrailing(t *testing.T) {
 		})
 	}
 }
+
+func TestRateLimiter_TokenTakenAfterStopNotSpent(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		rl := NewRateLimiter(newTestPool(t), 1, time.Second)
+		<-rl.tokens // a Submit that won the token race...
+		rl.Stop()   // ...while Stop ran
+		called := false
+		if err := rl.spend(func() error { called = true; return nil }); !errors.Is(err, ErrLimiterStopped) {
+			t.Fatalf("got %v, want ErrLimiterStopped", err)
+		}
+		if called {
+			t.Fatal("job submitted after Stop")
+		}
+	})
+}

@@ -385,11 +385,7 @@ func (rl *RateLimiter) Submit(ctx context.Context, job Job) error {
 	}
 	select {
 	case <-rl.tokens:
-		if err := rl.pool.SubmitContext(ctx, job); err != nil {
-			rl.putToken()
-			return err
-		}
-		return nil
+		return rl.spend(func() error { return rl.pool.SubmitContext(ctx, job) })
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-rl.ctx.Done():
@@ -406,14 +402,26 @@ func (rl *RateLimiter) TrySubmit(job Job) error {
 	}
 	select {
 	case <-rl.tokens:
-		if err := rl.pool.TrySubmitJob(job); err != nil {
-			rl.putToken()
-			return err
-		}
-		return nil
+		return rl.spend(func() error { return rl.pool.TrySubmitJob(job) })
 	default:
 		return ErrRateLimited
 	}
+}
+
+// spend uses a token the caller has just taken to run submit. Stop may have
+// run since the caller's first check (and select picks randomly between a
+// token and rl.ctx.Done), so re-check before submitting. The token is
+// returned if the limiter is stopped or submit fails.
+func (rl *RateLimiter) spend(submit func() error) error {
+	if rl.ctx.Err() != nil {
+		rl.putToken()
+		return ErrLimiterStopped
+	}
+	if err := submit(); err != nil {
+		rl.putToken()
+		return err
+	}
+	return nil
 }
 
 // Stop stops the token refiller. Subsequent submits return [ErrLimiterStopped].
