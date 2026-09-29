@@ -9,48 +9,166 @@ on:
 permissions:
   contents: read
 
+# Supersede an in-flight run when a PR is pushed to again. Runs on main are
+# never cancelled — coverage and bench there are the recorded baseline.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
-    strategy:
-      matrix:
-        go-version: ['1.24', '1.25', '1.26']
-        os: [ubuntu-latest, macos-latest, windows-latest]
+    name: test (${{ matrix.os }}, ${{ matrix.label }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        label: [floor, stable]
+        include:
+          # go-version-file self-tracks whatever go.mod declares as the floor,
+          # so this never needs a manual bump when the floor changes.
+          - label: floor
+            go-version-file: go.mod
+          # `stable` resolves to the current Go release at run time, so this
+          # never needs a manual bump when a new Go version ships either.
+          - label: stable
+            go-version: stable
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: ${{ matrix.go-version }}
+          go-version-file: ${{ matrix.go-version-file }}
+          check-latest: true
+      - name: Vet
+        run: go vet ./...
       - name: Test
-        shell: bash
-        run: go test -v -race -count=1 -coverprofile=coverage.out $(go list ./... | grep -v /examples/)
-      - name: Coverage
-        if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.26'
-        run: go tool cover -func=coverage.out
+        run: go test -race -count=1 ./...
+
+  # The examples are the code we point users at; building them catches API
+  # drift. `go build ./...` alone would do, but building each directory
+  # separately names the broken example in the log.
+  examples:
+    name: build (examples)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          check-latest: true
+      - run: make build-examples
+
+  coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          check-latest: true
+      - name: Run tests with coverage
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tail -1
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          files: coverage.out
+          fail_ci_if_error: false
 
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version: '1.26'
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7
+          go-version: stable
+          check-latest: true
+      - name: Check go.mod is tidy
+        run: make tidy-check
+      # Version comes from the Makefile so a local `make lint` and this gate
+      # run the same linter. Nothing bumps it automatically — Dependabot does
+      # not track action `with:` inputs — so refresh GOLANGCI_LINT_VERSION
+      # deliberately.
+      - name: Resolve golangci-lint version
+        id: golangci-lint-version
+        run: echo "version=$(make -s print-golangci-lint-version)" >> "$GITHUB_OUTPUT"
+      - uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: ${{ steps.golangci-lint-version.outputs.version }}
+          args: --timeout=5m
 
+  # Not redundant with Dependabot or CodeQL, which cover different things:
+  # Dependabot reports that a dependency is behind, CodeQL looks for bug patterns
+  # in our own code. govulncheck cross-references the Go vulnerability database
+  # against the call graph, so it reports only advisories this code actually
+  # reaches — including in the standard library of the toolchain CI uses.
+  vuln:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          check-latest: true
+      # Version comes from the Makefile so a local `make vuln` and this gate
+      # run the same scanner. Nothing bumps it automatically — Dependabot does
+      # not track `go install` lines — so refresh GOVULNCHECK_VERSION
+      # deliberately. The advisory database is still fetched at run time, so an
+      # older scanner still reports current advisories.
+      - name: Install govulncheck
+        run: |
+          version="$(make -s print-govulncheck-version)"
+          echo "govulncheck $version"
+          go install "golang.org/x/vuln/cmd/govulncheck@$version"
+      - name: Scan
+        run: govulncheck ./...
+
+  # THIS IS THE ONLY JOB THAT SHOULD BE A REQUIRED STATUS CHECK.
+  #
+  # Requiring the matrix jobs directly is brittle: their check names embed the
+  # matrix values, so adding an OS or renaming a job silently orphans the
+  # required context and every PR then blocks forever on a check that no longer
+  # exists. Gating on one stable name instead means the matrix is free to change.
+  #
+  # `if: always()` is load-bearing. Without it this job is skipped when a
+  # dependency fails, and GitHub counts a skipped required check as passing —
+  # a failing build would report mergeable.
+  ci:
+    name: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    needs: [test, examples, coverage, lint, vuln]
+    steps:
+      - name: Verify every job succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.value.result)\t\(.key)"'
+          if echo "$NEEDS" | jq -e 'any(.[]; .result != "success")' >/dev/null; then
+            echo "::error::one or more CI jobs did not succeed"
+            exit 1
+          fi
+          echo "all jobs succeeded"
+
+  # Not part of the `ci` gate: this runs only on main, so on a pull request it
+  # is skipped and would drag the gate down with it.
   bench:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version: '1.26'
-      - name: Build examples
-        run: |
-          for dir in examples/*/; do
-            go build "./$dir"
-          done
-      - name: Benchmark
-        run: go test -bench=. -benchmem -count=3 $(go list ./... | grep -v /examples/)
+          go-version: stable
+          check-latest: true
+      - run: make bench
