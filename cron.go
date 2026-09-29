@@ -17,6 +17,9 @@ import (
 // insensitive); weekday 7 is also Sunday. The macros @yearly (@annually),
 // @monthly, @weekly, @daily (@midnight) and @hourly are supported.
 //
+// Times that do not exist because of a daylight-saving jump are skipped that
+// day.
+//
 // As in standard cron, when both day-of-month and day-of-week are restricted
 // a day matches if either does; a field starting with "*" (such as "*/2")
 // counts as unrestricted for this rule.
@@ -117,23 +120,26 @@ func (s *CronSchedule) Next(after time.Time) time.Time {
 	limit := after.Add(5 * 365 * 24 * time.Hour)
 
 	for t.Before(limit) {
-		if !slices.Contains(s.months, int(t.Month())) {
-			t = time.Date(t.Year(), t.Month()+1, 1, 0, 0, 0, 0, t.Location())
-			continue
+		var next time.Time
+		switch {
+		case !slices.Contains(s.months, int(t.Month())):
+			next = time.Date(t.Year(), t.Month()+1, 1, 0, 0, 0, 0, t.Location())
+		case !s.dayMatches(t):
+			next = time.Date(t.Year(), t.Month(), t.Day()+1, 0, 0, 0, 0, t.Location())
+		case !slices.Contains(s.hours, t.Hour()):
+			next = time.Date(t.Year(), t.Month(), t.Day(), t.Hour()+1, 0, 0, 0, t.Location())
+		case !slices.Contains(s.minutes, t.Minute()):
+			next = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute()+1, 0, 0, t.Location())
+		default:
+			return t
 		}
-		if !s.dayMatches(t) {
-			t = time.Date(t.Year(), t.Month(), t.Day()+1, 0, 0, 0, 0, t.Location())
-			continue
+		// time.Date moves a local time inside a spring-forward gap backwards
+		// (02:00 becomes 01:00 EST), which would loop forever. Always make
+		// progress; times inside the gap are skipped that day.
+		if !next.After(t) {
+			next = t.Add(time.Minute)
 		}
-		if !slices.Contains(s.hours, t.Hour()) {
-			t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour()+1, 0, 0, 0, t.Location())
-			continue
-		}
-		if !slices.Contains(s.minutes, t.Minute()) {
-			t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute()+1, 0, 0, t.Location())
-			continue
-		}
-		return t
+		t = next
 	}
 	return time.Time{}
 }

@@ -84,7 +84,9 @@ func (s *OnceSchedule) Next(after time.Time) time.Time {
 }
 
 // DailySchedule fires at specific HH:MM wall-clock times each day, in the
-// time zone of the time passed to Next.
+// time zone of the time passed to Next. A time skipped by a daylight-saving
+// change (02:30 when clocks jump from 02:00 to 03:00) fires after the jump
+// (03:30).
 type DailySchedule struct {
 	times []time.Duration // time of day as hours+minutes, sorted ascending
 }
@@ -118,8 +120,18 @@ func (s *DailySchedule) Next(after time.Time) time.Time {
 	// 23 or 25 hours long, and midnight.Add(9h) would not be 09:00.
 	for day := range 3 {
 		for _, t := range s.times {
-			c := time.Date(after.Year(), after.Month(), after.Day()+day,
-				int(t/time.Hour), int(t%time.Hour/time.Minute), 0, 0, after.Location())
+			h, m := int(t/time.Hour), int(t%time.Hour/time.Minute)
+			c := time.Date(after.Year(), after.Month(), after.Day()+day, h, m, 0, 0, after.Location())
+			// A time inside a spring-forward gap does not exist, and time.Date
+			// moves it backwards (02:30 becomes 01:30 EST). Shift it forward
+			// by the gap instead (02:30 becomes 03:30 EDT), so it still runs
+			// that day, after the clock change.
+			if diff := (h*60 + m) - (c.Hour()*60 + c.Minute()); diff != 0 {
+				if diff < 0 {
+					diff += 24 * 60 // normalized back across midnight
+				}
+				c = c.Add(time.Duration(diff) * time.Minute)
+			}
 			if c.After(after) {
 				return c
 			}

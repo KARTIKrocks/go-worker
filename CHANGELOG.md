@@ -18,7 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `DailySchedule` fired an hour early or late on daylight-saving change days
+- `DailySchedule` fired an hour early or late on daylight-saving change days; a time skipped by the clock change (02:30 when clocks jump 02:00→03:00) now fires after the jump (03:30)
+- `CronSchedule.Next` looped forever for times inside a spring-forward gap (e.g. `0 2 * * *` on a US DST day), hanging the scheduler; such times are now skipped that day
 - A `Once` task with `WithRunImmediate` ran twice (immediately and at its scheduled time)
 - A panic in `WithOnTaskStart`/`WithOnTaskEnd` callbacks crashed the process; it is now recovered and logged
 - `Start` after `Stop` reported `IsRunning() == true` without running anything

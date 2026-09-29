@@ -33,6 +33,56 @@ func TestDailySchedule_DST(t *testing.T) {
 	}
 }
 
+func TestDailySchedule_TimeInDSTGap(t *testing.T) {
+	ny, _ := time.LoadLocation("America/New_York")
+	havana, err := time.LoadLocation("America/Havana") // clocks jump at midnight
+	if err != nil {
+		t.Fatal(err)
+	}
+	edt := time.FixedZone("EDT", -4*3600)
+	cdt := time.FixedZone("CDT", -4*3600)
+	for name, tc := range map[string]struct {
+		clock       string
+		after, want time.Time
+	}{
+		// 2026-03-08 02:00 -> 03:00 in New York: 02:30 does not exist.
+		"gap": {"02:30", time.Date(2026, 3, 8, 0, 0, 0, 0, ny), time.Date(2026, 3, 8, 3, 30, 0, 0, edt)},
+		// 2026-03-08 00:00 -> 01:00 in Havana: 00:30 does not exist.
+		"gap at midnight": {"00:30", time.Date(2026, 3, 7, 12, 0, 0, 0, havana), time.Date(2026, 3, 8, 1, 30, 0, 0, cdt)},
+	} {
+		s, _ := NewDailySchedule(tc.clock)
+		if got := s.Next(tc.after); !got.Equal(tc.want) {
+			t.Errorf("%s: got %v, want %v", name, got, tc.want)
+		}
+	}
+}
+
+func TestCron_DSTGapDoesNotHang(t *testing.T) {
+	ny, _ := time.LoadLocation("America/New_York")
+	from := time.Date(2026, 3, 8, 0, 30, 0, 0, ny) // clocks jump 02:00 -> 03:00
+	for expr, want := range map[string]time.Time{
+		// 02:xx does not exist that day, so it is skipped.
+		"0 2 * * *":  time.Date(2026, 3, 9, 2, 0, 0, 0, ny),
+		"30 2 * * *": time.Date(2026, 3, 9, 2, 30, 0, 0, ny),
+		"0 3 * * *":  time.Date(2026, 3, 8, 3, 0, 0, 0, ny),
+	} {
+		c, err := ParseCron(expr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan time.Time, 1)
+		go func() { done <- c.Next(from) }()
+		select {
+		case got := <-done:
+			if !got.Equal(want) {
+				t.Errorf("%q: got %v, want %v", expr, got, want)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%q: Next hung in the DST gap", expr)
+		}
+	}
+}
+
 // ---------- Cron ----------
 
 func TestParseCron_ExtendedSyntax(t *testing.T) {
