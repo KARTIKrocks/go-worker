@@ -64,7 +64,7 @@ type Pool struct {
 	closed  atomic.Bool
 	paused  atomic.Bool
 	pauseMu sync.Mutex
-	pauseCh chan struct{} // closed when unpaused; recreated on pause
+	pauseCh chan struct{} // closed and replaced on every Pause/Resume, waking workers
 
 	metrics    Metrics
 	logger     Logger
@@ -92,11 +92,7 @@ func NewPool(opts ...Option) (*Pool, error) {
 		RetryBackoff: true,
 	}
 
-	p := &Pool{
-		pauseCh: make(chan struct{}),
-	}
-	// unpause by default
-	close(p.pauseCh)
+	p := &Pool{pauseCh: make(chan struct{})}
 
 	for _, opt := range opts {
 		opt(p, &cfg)
@@ -214,31 +210,33 @@ func (p *Pool) submit(waitCtx, jobCtx context.Context, job Job, done func(error)
 // Pause pauses all workers. Workers finish their current job but do not
 // pick up new ones until [Pool.Resume] is called.
 func (p *Pool) Pause() {
+	p.setPaused(true)
+}
+
+// Resume resumes a paused pool.
+func (p *Pool) Resume() {
+	p.setPaused(false)
+}
+
+func (p *Pool) setPaused(paused bool) {
 	p.pauseMu.Lock()
 	defer p.pauseMu.Unlock()
 	// A closing pool must be able to drain, so Pause is a no-op once Close
 	// has started. Close sets closed before calling Resume, so this check
 	// under pauseMu cannot miss it.
-	if p.closed.Load() {
+	if paused && p.closed.Load() {
 		return
 	}
-	if !p.paused.Load() {
-		p.pauseCh = make(chan struct{})
-		p.paused.Store(true)
-		if p.logger != nil {
-			p.logger.Info("pool paused")
-		}
+	if p.paused.Load() == paused {
+		return
 	}
-}
-
-// Resume resumes a paused pool.
-func (p *Pool) Resume() {
-	p.pauseMu.Lock()
-	defer p.pauseMu.Unlock()
-	if p.paused.Load() {
-		p.paused.Store(false)
-		close(p.pauseCh)
-		if p.logger != nil {
+	p.paused.Store(paused)
+	close(p.pauseCh)
+	p.pauseCh = make(chan struct{})
+	if p.logger != nil {
+		if paused {
+			p.logger.Info("pool paused")
+		} else {
 			p.logger.Info("pool resumed")
 		}
 	}
@@ -351,16 +349,25 @@ func (p *Pool) worker(id int) {
 	}()
 
 	for {
-		if !p.waitUnpaused() {
+		changed, ok := p.waitUnpaused()
+		if !ok {
 			return
 		}
 
 		select {
 		case <-p.ctx.Done():
 			return
+		case <-changed:
+			// Paused while idle: go back and wait for Resume.
+			continue
 		case envelope, ok := <-p.jobs:
 			if !ok {
 				return
+			}
+			// A job can be received at the same instant Pause is called;
+			// hold it until resumed so no job starts while paused.
+			if p.paused.Load() {
+				p.waitUnpaused()
 			}
 			// select picks randomly among ready cases, so a force-cancelled
 			// pool can still hand us a job; drop it rather than run it.
@@ -383,17 +390,22 @@ func (p *Pool) worker(id int) {
 	}
 }
 
-// waitUnpaused blocks while the pool is paused. It returns false if the pool
-// is force-cancelled while waiting.
-func (p *Pool) waitUnpaused() bool {
-	p.pauseMu.Lock()
-	ch := p.pauseCh
-	p.pauseMu.Unlock()
-	select {
-	case <-ch:
-		return true
-	case <-p.ctx.Done():
-		return false
+// waitUnpaused blocks while the pool is paused. It returns a channel that is
+// closed on the next Pause/Resume, or ok=false if the pool is force-cancelled
+// while waiting.
+func (p *Pool) waitUnpaused() (changed <-chan struct{}, ok bool) {
+	for {
+		p.pauseMu.Lock()
+		paused, ch := p.paused.Load(), p.pauseCh
+		p.pauseMu.Unlock()
+		if !paused {
+			return ch, true
+		}
+		select {
+		case <-ch:
+		case <-p.ctx.Done():
+			return nil, false
+		}
 	}
 }
 

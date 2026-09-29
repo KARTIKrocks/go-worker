@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Group`/`ErrorGroup`/`Batch` functions now receive the job context, so `JobTimeout` and forced shutdown apply
 - `CloseWithTimeout` dropped queued jobs without notifying waiters; `SubmitWait`, `Future` and groups now get `ErrPoolClosed`
 - `Pause` during `Close` hung shutdown; `Pause` is now a no-op once closing
+- `Pause` did not stop idle workers, which would still pick up the next submitted job
 - Jobs cancelled during a retry delay were not counted in metrics or passed to `OnJobFailed`
 - `FixedTimeSchedule` with a zero interval panicked with divide-by-zero; zero/negative intervals no longer fire repeatedly
 - `OverlapQueue` queued a run on every scheduler tick instead of once per missed slot

@@ -368,3 +368,24 @@ func TestRegression_OverlapQueueRespectsMaxRuns(t *testing.T) {
 		t.Fatalf("task ran %d times, want 2 (WithMaxRuns)", n)
 	}
 }
+
+func TestRegression_PauseStopsIdleWorkers(t *testing.T) {
+	p, _ := NewPool(WithWorkers(4), WithQueueSize(10))
+	defer p.Close()
+	time.Sleep(10 * time.Millisecond) // let every worker block waiting for a job
+	p.Pause()
+	var ran atomic.Bool
+	_ = p.Submit(func(context.Context) error { ran.Store(true); return nil })
+	time.Sleep(30 * time.Millisecond)
+	if ran.Load() {
+		t.Fatal("idle worker ran a job while paused")
+	}
+	if n := p.QueueLength(); n != 1 {
+		t.Fatalf("QueueLength = %d while paused, want 1", n)
+	}
+	p.Resume()
+	time.Sleep(30 * time.Millisecond)
+	if !ran.Load() {
+		t.Fatal("job did not run after Resume")
+	}
+}
