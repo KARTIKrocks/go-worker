@@ -19,12 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `DailySchedule` fired an hour early or late on daylight-saving change days; a time skipped by the clock change (02:30 when clocks jump 02:00→03:00) now fires after the jump (03:30)
+- `DailySchedule` skipped the whole clock-change day in zones east of UTC (e.g. Europe/Berlin), and could return a later time before an earlier one on that day
+- `OnceSchedule.Next(At)` returned `At` itself instead of a time strictly after it, so a tick landing exactly on `At` could run the task twice
+- `SubmitContext` (and `RateLimiter.Submit`, `Ticker`) could enqueue a job even though the context was already cancelled
 - `CronSchedule.Next` looped forever for times inside a spring-forward gap (e.g. `0 2 * * *` on a US DST day), hanging the scheduler; such times are now skipped that day
 - A `Once` task with `WithRunImmediate` ran twice (immediately and at its scheduled time)
 - A panic in `WithOnTaskStart`/`WithOnTaskEnd` callbacks crashed the process; it is now recovered and logged
 - `Start` after `Stop` reported `IsRunning() == true` without running anything
 - Cron treated a day field such as `*/2` as restricted, applying OR instead of AND with the other day field
 - A scheduled run and a `Trigger` could both start a run under `OverlapSkip`, or exceed `WithMaxRuns`
+- Under `OverlapQueue`, a run queued just as the previous run finished could be stranded and never run, although `Trigger` had returned `true`
 - Retry backoff could overflow into a negative delay with large delays and many retries; it now saturates
 - A panic in a hook or in the panic handler crashed the process; it is now recovered and logged
 - `WithMaxRetryDelay` accepted negative values
@@ -58,6 +62,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `Config` and `Metrics` are no longer exported. Configure pools with the `With...` options and read metrics with `Pool.Snapshot()`, which returns the still-public `MetricsSnapshot`
+- **Breaking:** `Option` is now `func(*Pool)`; options are still created only with the `With...` functions
 - **Breaking:** `Scheduler.Stop` is permanent; `Start` after `Stop` does nothing
 - **Breaking:** `Scheduler.Trigger` respects the task's pause state, `WithMaxRuns` and overlap policy, and returns `false` when no run was started or queued
 - `RateLimiter.TrySubmit` returns `ErrRateLimited` (was `ErrPoolFull`) when no token is available, and `ErrLimiterStopped` (was `ErrPoolClosed`) after `Stop`; pool errors are passed through

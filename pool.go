@@ -53,7 +53,7 @@ func (f JobFunc) Process(ctx context.Context) error {
 // Pool manages a set of worker goroutines that process jobs concurrently.
 // It is safe for concurrent use by multiple goroutines.
 type Pool struct {
-	cfg Config
+	cfg config
 
 	jobs     chan jobEnvelope
 	quit     chan struct{} // closed when Close begins; unblocks waiting submitters
@@ -67,7 +67,7 @@ type Pool struct {
 	pauseMu sync.Mutex
 	pauseCh chan struct{} // closed and replaced on every Pause/Resume, waking workers
 
-	metrics    Metrics
+	metrics    metrics
 	logger     Logger
 	hooks      Hooks
 	middleware []Middleware
@@ -84,25 +84,25 @@ type jobEnvelope struct {
 // NewPool creates and starts a new worker pool.
 // Workers begin processing immediately. Use [Pool.Close] for graceful shutdown.
 func NewPool(opts ...Option) (*Pool, error) {
-	cfg := Config{
-		Workers:      4,
-		QueueSize:    100,
-		MaxRetries:   0,
-		RetryDelay:   time.Second,
-		RetryBackoff: true,
+	p := &Pool{
+		pauseCh: make(chan struct{}),
+		cfg: config{
+			Workers:      4,
+			QueueSize:    100,
+			RetryDelay:   time.Second,
+			RetryBackoff: true,
+		},
 	}
-
-	p := &Pool{pauseCh: make(chan struct{})}
 
 	for _, opt := range opts {
-		opt(p, &cfg)
+		opt(p)
 	}
 
+	cfg := p.cfg
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidConfig, err)
 	}
 
-	p.cfg = cfg
 	p.jobs = make(chan jobEnvelope, cfg.QueueSize)
 	p.quit = make(chan struct{})
 	p.ctx, p.cancel = context.WithCancel(context.Background())
@@ -196,6 +196,11 @@ func (p *Pool) submit(waitCtx, jobCtx context.Context, job Job, done func(error)
 		}
 	}
 
+	// select picks randomly among ready cases, so an already-done waitCtx
+	// could lose to a free queue slot; honour it first.
+	if err := waitCtx.Err(); err != nil {
+		return err
+	}
 	select {
 	case p.jobs <- envelope:
 		p.metrics.JobsSubmitted.Add(1)
@@ -254,7 +259,7 @@ func (p *Pool) IsClosed() bool {
 
 // Snapshot returns a point-in-time copy of pool metrics.
 func (p *Pool) Snapshot() MetricsSnapshot {
-	s := p.metrics.Snapshot()
+	s := p.metrics.snapshot()
 	s.QueueLength = int32(p.QueueLength()) //nolint:gosec // bounded by QueueSize
 	return s
 }

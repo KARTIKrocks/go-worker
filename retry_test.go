@@ -184,7 +184,7 @@ func TestRetry_PanickingLoggerDuringRecovery(t *testing.T) {
 }
 
 func TestRetry_DelayNoOverflow(t *testing.T) {
-	p := &Pool{cfg: Config{RetryDelay: 10 * time.Second, RetryBackoff: true}}
+	p := &Pool{cfg: config{RetryDelay: 10 * time.Second, RetryBackoff: true}}
 	for attempt := 1; attempt <= 100; attempt++ {
 		if d := p.retryDelay(attempt); d <= 0 {
 			t.Fatalf("attempt %d: delay %v overflowed", attempt, d)
@@ -200,7 +200,7 @@ func TestRetry_DelayNoOverflow(t *testing.T) {
 }
 
 func TestRetry_Jitter(t *testing.T) {
-	p := &Pool{cfg: Config{RetryDelay: time.Second, RetryJitter: 0.5}}
+	p := &Pool{cfg: config{RetryDelay: time.Second, RetryJitter: 0.5}}
 	varied := false
 	for range 200 {
 		d := p.retryDelay(1)

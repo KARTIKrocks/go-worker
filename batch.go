@@ -2,6 +2,8 @@ package worker
 
 import (
 	"context"
+	"iter"
+	"slices"
 )
 
 // Batch processes items in configurable-sized chunks using a worker pool.
@@ -48,18 +50,9 @@ func (b *Batch[T]) Process(ctx context.Context) error {
 	}
 
 	g := NewErrorGroupContext(ctx, b.pool)
-
-	for i := 0; i < len(b.items); i += b.batchSize {
-		end := min(i+b.batchSize, len(b.items))
-		// Copy the slice to avoid closure capture issues.
-		chunk := make([]T, end-i)
-		copy(chunk, b.items[i:end])
-
-		g.Go(func(ctx context.Context) error {
-			return b.processor(ctx, chunk)
-		})
+	for chunk := range b.chunks() {
+		g.Go(func(ctx context.Context) error { return b.processor(ctx, chunk) })
 	}
-
 	return g.Wait()
 }
 
@@ -70,18 +63,22 @@ func (b *Batch[T]) ProcessAll(ctx context.Context) []error {
 	}
 
 	g := NewGroupContext(ctx, b.pool)
-
-	for i := 0; i < len(b.items); i += b.batchSize {
-		end := min(i+b.batchSize, len(b.items))
-		chunk := make([]T, end-i)
-		copy(chunk, b.items[i:end])
-
-		g.Go(func(ctx context.Context) error {
-			return b.processor(ctx, chunk)
-		})
+	for chunk := range b.chunks() {
+		g.Go(func(ctx context.Context) error { return b.processor(ctx, chunk) })
 	}
-
 	return g.WaitAll()
+}
+
+// chunks yields the pending items in pieces of up to batchSize. Each piece is
+// a copy, so the processor never shares memory with b.items.
+func (b *Batch[T]) chunks() iter.Seq[[]T] {
+	return func(yield func([]T) bool) {
+		for chunk := range slices.Chunk(b.items, b.batchSize) {
+			if !yield(slices.Clone(chunk)) {
+				return
+			}
+		}
+	}
 }
 
 // Clear removes all pending items.
