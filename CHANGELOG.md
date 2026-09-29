@@ -14,15 +14,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Permanent(err)` marks an error as not retryable
 - `WithRetryJitter(fraction)` randomizes retry delays
 - `PanicError` carries the panic value and stack trace; it matches `ErrJobPanic`
+- Cron: step ranges (`0-30/10`, `5/20`), month and weekday names (`JAN`, `MON-FRI`), `7` for Sunday, and the macros `@yearly`, `@annually`, `@monthly`, `@weekly`, `@daily`, `@midnight`, `@hourly`
 
 ### Fixed
 
+- `DailySchedule` fired an hour early or late on daylight-saving change days
+- A `Once` task with `WithRunImmediate` ran twice (immediately and at its scheduled time)
+- A panic in `WithOnTaskStart`/`WithOnTaskEnd` callbacks crashed the process; it is now recovered and logged
+- `Start` after `Stop` reported `IsRunning() == true` without running anything
+- Cron treated a day field such as `*/2` as restricted, applying OR instead of AND with the other day field
+- A scheduled run and a `Trigger` could both start a run under `OverlapSkip`, or exceed `WithMaxRuns`
 - Retry backoff could overflow into a negative delay with large delays and many retries; it now saturates
 - A panic in a hook or in the panic handler crashed the process; it is now recovered and logged
 - `WithMaxRetryDelay` accepted negative values
 - A panic or `Permanent` error returned as the job's context was cancelled was reported as `context.Canceled`
 - `JobsRetried` counted retries that were cancelled during the backoff delay and never ran
-
 - `Debouncer`: a timer callback that had already fired could run after `Cancel`/`Flush` or a newer `Submit` and submit a job early
 - `Debouncer`: `Flush` in leading mode re-submitted the job that had already run
 - `Throttler`: a late trailing timer could submit a stale job after `Reset`, or after `Submit`/`SubmitTrailing`/`Force` opened a new window; opening a window now drops the pending trailing job
@@ -51,6 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `Scheduler.Stop` is permanent; `Start` after `Stop` does nothing
+- **Breaking:** `Scheduler.Trigger` respects the task's pause state, `WithMaxRuns` and overlap policy, and returns `false` when no run was started or queued
 - `RateLimiter.TrySubmit` returns `ErrRateLimited` (was `ErrPoolFull`) when no token is available, and `ErrLimiterStopped` (was `ErrPoolClosed`) after `Stop`; pool errors are passed through
 - Skipped `Group` functions (group already cancelled) now add `context.Canceled` to `WaitAll`
 - `Group`/`ErrorGroup` functions are now subject to the pool's `JobTimeout`

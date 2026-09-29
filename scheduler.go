@@ -3,7 +3,8 @@ package worker
 import (
 	"context"
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -82,119 +83,10 @@ func (s *OnceSchedule) Next(after time.Time) time.Time {
 	return s.At
 }
 
-// CronSchedule fires based on cron-like expressions.
-//
-// Format: "minute hour day-of-month month day-of-week"
-//
-// Supports *, */n, n-m, and comma-separated lists.
-type CronSchedule struct {
-	minutes     []int
-	hours       []int
-	days        []int
-	months      []int
-	weekdays    []int
-	expression  string
-	allDays     bool // true when the day-of-month field was "*"
-	allWeekdays bool // true when the day-of-week field was "*"
-}
-
-// ParseCron parses a standard 5-field cron expression.
-//
-// Examples:
-//
-//	"*/15 * * * *"  — every 15 minutes
-//	"0 9 * * 1-5"  — 9 AM on weekdays
-//	"0 0 1 * *"    — midnight on the 1st of each month
-func ParseCron(expr string) (*CronSchedule, error) {
-	parts := strings.Fields(expr)
-	if len(parts) != 5 {
-		return nil, fmt.Errorf("invalid cron expression: expected 5 fields, got %d", len(parts))
-	}
-
-	minutes, err := parseCronField(parts[0], 0, 59)
-	if err != nil {
-		return nil, fmt.Errorf("minute field: %w", err)
-	}
-	hours, err := parseCronField(parts[1], 0, 23)
-	if err != nil {
-		return nil, fmt.Errorf("hour field: %w", err)
-	}
-	days, err := parseCronField(parts[2], 1, 31)
-	if err != nil {
-		return nil, fmt.Errorf("day field: %w", err)
-	}
-	months, err := parseCronField(parts[3], 1, 12)
-	if err != nil {
-		return nil, fmt.Errorf("month field: %w", err)
-	}
-	weekdays, err := parseCronField(parts[4], 0, 6)
-	if err != nil {
-		return nil, fmt.Errorf("weekday field: %w", err)
-	}
-
-	return &CronSchedule{
-		minutes:     minutes,
-		hours:       hours,
-		days:        days,
-		months:      months,
-		weekdays:    weekdays,
-		expression:  expr,
-		allDays:     parts[2] == "*",
-		allWeekdays: parts[4] == "*",
-	}, nil
-}
-
-// Next implements [Schedule].
-func (s *CronSchedule) Next(after time.Time) time.Time {
-	// Truncate to the next whole minute in the same timezone.
-	t := after.Add(time.Minute)
-	t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), 0, 0, t.Location())
-	limit := after.Add(5 * 365 * 24 * time.Hour)
-
-	for t.Before(limit) {
-		if !slices.Contains(s.months, int(t.Month())) {
-			t = time.Date(t.Year(), t.Month()+1, 1, 0, 0, 0, 0, t.Location())
-			continue
-		}
-
-		// Standard cron: if both day-of-month and day-of-week are restricted
-		// (not "*"), match on EITHER. If only one is restricted, use only that one.
-		dayMatch := s.allDays || slices.Contains(s.days, t.Day())
-		wdayMatch := s.allWeekdays || slices.Contains(s.weekdays, int(t.Weekday()))
-
-		var dayOk bool
-		switch {
-		case s.allDays && s.allWeekdays:
-			dayOk = true // both unrestricted
-		case !s.allDays && !s.allWeekdays:
-			dayOk = dayMatch || wdayMatch // OR semantics per standard cron
-		default:
-			dayOk = dayMatch && wdayMatch // one is "*" so check the restricted one
-		}
-
-		if !dayOk {
-			t = time.Date(t.Year(), t.Month(), t.Day()+1, 0, 0, 0, 0, t.Location())
-			continue
-		}
-		if !slices.Contains(s.hours, t.Hour()) {
-			t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour()+1, 0, 0, 0, t.Location())
-			continue
-		}
-		if !slices.Contains(s.minutes, t.Minute()) {
-			t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute()+1, 0, 0, t.Location())
-			continue
-		}
-		return t
-	}
-	return time.Time{}
-}
-
-// String returns the original cron expression.
-func (s *CronSchedule) String() string { return s.expression }
-
-// DailySchedule fires at specific HH:MM times each day.
+// DailySchedule fires at specific HH:MM wall-clock times each day, in the
+// time zone of the time passed to Next.
 type DailySchedule struct {
-	times []time.Duration // offsets from midnight, sorted ascending
+	times []time.Duration // time of day as hours+minutes, sorted ascending
 }
 
 // NewDailySchedule creates a schedule from "HH:MM" strings.
@@ -221,16 +113,17 @@ func NewDailySchedule(times ...string) (*DailySchedule, error) {
 
 // Next implements [Schedule].
 func (s *DailySchedule) Next(after time.Time) time.Time {
-	midnight := time.Date(after.Year(), after.Month(), after.Day(), 0, 0, 0, 0, after.Location())
-	since := after.Sub(midnight)
-
-	for _, t := range s.times {
-		if t > since {
-			return midnight.Add(t)
+	// Build each candidate from the calendar date and clock time rather than
+	// adding a duration to midnight: on daylight-saving change days a day is
+	// 23 or 25 hours long, and midnight.Add(9h) would not be 09:00.
+	for day := range 3 {
+		for _, t := range s.times {
+			c := time.Date(after.Year(), after.Month(), after.Day()+day,
+				int(t/time.Hour), int(t%time.Hour/time.Minute), 0, 0, after.Location())
+			if c.After(after) {
+				return c
+			}
 		}
-	}
-	if len(s.times) > 0 {
-		return midnight.Add(24 * time.Hour).Add(s.times[0])
 	}
 	return time.Time{}
 }
@@ -253,6 +146,7 @@ type Scheduler struct {
 	wg      sync.WaitGroup
 	logger  Logger
 	running atomic.Bool
+	lifeMu  sync.Mutex // serializes Start and Stop
 
 	tickInterval time.Duration
 	onTaskStart  func(name string)
@@ -337,6 +231,7 @@ func WithOverlapPolicy(p OverlapPolicy) TaskOption {
 }
 
 // WithRunImmediate causes the task to fire immediately when the scheduler starts.
+// For a [OnceSchedule] task, the immediate run replaces the scheduled one.
 func WithRunImmediate() TaskOption {
 	return func(t *scheduledTask) { t.runNow = true }
 }
@@ -372,6 +267,10 @@ func (s *Scheduler) Schedule(name string, sched Schedule, job Job, opts ...TaskO
 	}
 	if task.runNow {
 		task.next = time.Now()
+		// A once task must not run again at its scheduled time.
+		if once, ok := sched.(*OnceSchedule); ok {
+			once.done.Store(true)
+		}
 	}
 	task.ctx, task.cancel = context.WithCancel(s.ctx)
 
@@ -478,7 +377,10 @@ func (s *Scheduler) Resume(name string) bool {
 	return true
 }
 
-// Trigger manually fires a task immediately, outside its normal schedule.
+// Trigger runs a task now, outside its normal schedule. Like a scheduled run,
+// it respects the task's pause state, [WithMaxRuns] limit and overlap policy.
+// It reports whether a run was started or queued; false also means the task
+// does not exist.
 func (s *Scheduler) Trigger(name string) bool {
 	s.tasksMu.RLock()
 	t, ok := s.tasks[name]
@@ -486,15 +388,18 @@ func (s *Scheduler) Trigger(name string) bool {
 	if !ok {
 		return false
 	}
-	go s.executeTask(t)
-	return true
+	return s.dispatch(t)
 }
 
-// Start begins the scheduler loop. It is idempotent.
+// Start begins the scheduler loop. It is idempotent. A stopped scheduler
+// cannot be restarted: Start after [Scheduler.Stop] does nothing.
 func (s *Scheduler) Start() {
-	if s.running.Swap(true) {
+	s.lifeMu.Lock()
+	defer s.lifeMu.Unlock()
+	if s.running.Load() || s.ctx.Err() != nil {
 		return
 	}
+	s.running.Store(true)
 	if s.logger != nil {
 		s.logger.Info("scheduler started")
 	}
@@ -526,10 +431,9 @@ func (s *Scheduler) tick(now time.Time) {
 	s.tasksMu.RUnlock()
 
 	for _, task := range snapshot {
-		if task.paused.Load() {
-			continue
-		}
-		if task.maxRunsReached() {
+		// Paused or exhausted tasks keep their due slot, so a resumed task
+		// runs once promptly instead of waiting a full period.
+		if task.paused.Load() || task.maxRunsReached() {
 			continue
 		}
 
@@ -542,21 +446,45 @@ func (s *Scheduler) tick(now time.Time) {
 		task.next = task.nextRun(now)
 		task.mu.Unlock()
 
-		if task.running.Load() > 0 {
-			switch task.overlap {
-			case OverlapSkip:
-				continue
-			case OverlapQueue:
-				if task.queued.Load() < maxQueuedPerTask {
-					task.queued.Add(1)
-				}
-				continue
-			case OverlapAllow:
-				// fall through
-			}
-		}
+		s.dispatch(task)
+	}
+}
 
-		go s.executeTask(task)
+// dispatch starts a run of task now, subject to its pause state, WithMaxRuns
+// limit and overlap policy. It reports whether a run was started or queued.
+// Both the scheduler loop and Trigger go through here.
+func (s *Scheduler) dispatch(task *scheduledTask) bool {
+	if task.paused.Load() || task.ctx.Err() != nil {
+		return false
+	}
+
+	// Claim the running slot atomically so two dispatches (a tick and a
+	// Trigger) cannot both start a run under OverlapSkip or OverlapQueue.
+	if task.overlap == OverlapAllow {
+		task.running.Add(1)
+	} else if !task.running.CompareAndSwap(0, 1) {
+		return task.overlap == OverlapQueue && task.enqueue()
+	}
+
+	if !task.claimRun() {
+		task.running.Add(-1)
+		return false
+	}
+	go s.executeTask(task)
+	return true
+}
+
+// enqueue queues one run behind the in-flight one, unless the queue is full
+// or the queued runs would already use up the WithMaxRuns limit.
+func (t *scheduledTask) enqueue() bool {
+	for {
+		q := t.queued.Load()
+		if q >= maxQueuedPerTask || (t.maxRuns > 0 && t.runCnt.Load()+int64(q) >= int64(t.maxRuns)) {
+			return false
+		}
+		if t.queued.CompareAndSwap(q, q+1) {
+			return true
+		}
 	}
 }
 
@@ -565,34 +493,40 @@ func (t *scheduledTask) maxRunsReached() bool {
 	return t.maxRuns > 0 && t.runCnt.Load() >= int64(t.maxRuns)
 }
 
+// claimRun counts one run against the WithMaxRuns limit, failing if the
+// limit is already reached.
+func (t *scheduledTask) claimRun() bool {
+	for {
+		n := t.runCnt.Load()
+		if t.maxRuns > 0 && n >= int64(t.maxRuns) {
+			return false
+		}
+		if t.runCnt.CompareAndSwap(n, n+1) {
+			return true
+		}
+	}
+}
+
 // nextRun returns the task's next run time after now, with jitter applied.
 // The caller must hold t.mu.
 func (t *scheduledTask) nextRun(now time.Time) time.Time {
 	next := t.schedule.Next(now)
 	if t.jitter > 0 && !next.IsZero() {
-		next = next.Add(time.Duration(rand.Int63n(int64(t.jitter)))) //nolint:gosec // scheduling jitter is not security-sensitive
+		next = next.Add(time.Duration(rand.Int64N(int64(t.jitter)))) //nolint:gosec // scheduling jitter is not security-sensitive
 	}
 	return next
 }
 
+// executeTask performs one run of task. The caller has already claimed the
+// run (running and runCnt are incremented).
 func (s *Scheduler) executeTask(task *scheduledTask) {
-	task.running.Add(1)
-	task.runCnt.Add(1)
-	defer func() {
-		task.running.Add(-1)
-		if task.ctx.Err() != nil || task.maxRunsReached() {
-			task.queued.Store(0)
-		} else if task.queued.Load() > 0 {
-			task.queued.Add(-1)
-			go s.executeTask(task)
-		}
-	}()
+	defer s.finishRun(task)
 
 	if s.logger != nil {
 		s.logger.Debug("running task", "name", task.name)
 	}
 	if s.onTaskStart != nil {
-		s.onTaskStart(task.name)
+		s.callHook("OnTaskStart", func() { s.onTaskStart(task.name) })
 	}
 
 	start := time.Now()
@@ -613,18 +547,57 @@ func (s *Scheduler) executeTask(task *scheduledTask) {
 		s.logger.Error("task failed", "name", task.name, "error", err, "duration", dur)
 	}
 	if s.onTaskEnd != nil {
-		s.onTaskEnd(task.name, err, dur)
+		s.callHook("OnTaskEnd", func() { s.onTaskEnd(task.name, err, dur) })
 	}
 }
 
-// Stop stops the scheduler and waits for the loop goroutine to exit.
-// The contexts of in-flight task runs are cancelled, but Stop does not wait
-// for those runs to return.
+// finishRun releases a finished run's slot, handing it straight to a queued
+// run if there is one, so no other dispatch can start in between.
+func (s *Scheduler) finishRun(task *scheduledTask) {
+	for {
+		if task.queued.Load() > 0 {
+			if task.ctx.Err() == nil && task.claimRun() {
+				task.queued.Add(-1)
+				go s.executeTask(task) // the queued run inherits this slot
+				return
+			}
+			task.queued.Store(0)
+		}
+		task.running.Add(-1)
+
+		// A dispatch that saw the slot still taken may have queued a run
+		// between the check above and the decrement. If so, and nobody else
+		// has taken the slot, take it back and hand it over; otherwise the
+		// current holder will see the queued run when it finishes.
+		if task.queued.Load() == 0 || !task.running.CompareAndSwap(0, 1) {
+			return
+		}
+	}
+}
+
+// callHook runs a user callback, recovering a panic so a faulty callback
+// cannot crash the process. The panic is logged if a logger is set; a panic
+// from the logger itself is dropped.
+func (s *Scheduler) callHook(name string, fn func()) {
+	defer func() {
+		if r := recover(); r != nil && s.logger != nil {
+			defer func() { _ = recover() }()
+			s.logger.Error("scheduler hook panicked", "hook", name, "recovered", r, "stack", string(debug.Stack()))
+		}
+	}()
+	fn()
+}
+
+// Stop stops the scheduler and waits for the loop goroutine to exit. It is
+// permanent: the scheduler cannot be started again. The contexts of in-flight
+// task runs are cancelled, but Stop does not wait for those runs to return.
 func (s *Scheduler) Stop() {
+	s.lifeMu.Lock()
+	defer s.lifeMu.Unlock()
+	s.cancel() // also makes a never-started scheduler permanently stopped
 	if !s.running.Swap(false) {
 		return
 	}
-	s.cancel()
 	s.wg.Wait()
 	if s.logger != nil {
 		s.logger.Info("scheduler stopped")
@@ -695,67 +668,4 @@ func (i *TaskInfo) SuccessRate() float64 {
 		return 0
 	}
 	return float64(i.TotalRuns-i.TotalErrors) / float64(i.TotalRuns)
-}
-
-// --- helpers ---
-
-func parseCronField(field string, min, max int) ([]int, error) {
-	var result []int
-	for part := range strings.SplitSeq(field, ",") {
-		part = strings.TrimSpace(part)
-		switch {
-		case part == "*":
-			for i := min; i <= max; i++ {
-				result = append(result, i)
-			}
-		case strings.HasPrefix(part, "*/"):
-			step, err := strconv.Atoi(part[2:])
-			if err != nil || step <= 0 {
-				return nil, fmt.Errorf("invalid step %q", part)
-			}
-			for i := min; i <= max; i += step {
-				result = append(result, i)
-			}
-		case strings.Contains(part, "-"):
-			vals, err := parseCronRange(part, min, max)
-			if err != nil {
-				return nil, err
-			}
-			result = append(result, vals...)
-		default:
-			val, err := strconv.Atoi(part)
-			if err != nil {
-				return nil, fmt.Errorf("invalid value %q", part)
-			}
-			if val < min || val > max {
-				return nil, fmt.Errorf("value %d out of bounds [%d, %d]", val, min, max)
-			}
-			result = append(result, val)
-		}
-	}
-	if len(result) == 0 {
-		return nil, fmt.Errorf("empty field %q", field)
-	}
-	return result, nil
-}
-
-// parseCronRange parses an "n-m" cron range bounded by [min, max].
-func parseCronRange(part string, min, max int) ([]int, error) {
-	bounds := strings.SplitN(part, "-", 2)
-	lo, err := strconv.Atoi(bounds[0])
-	if err != nil {
-		return nil, fmt.Errorf("invalid range start in %q", part)
-	}
-	hi, err := strconv.Atoi(bounds[1])
-	if err != nil {
-		return nil, fmt.Errorf("invalid range end in %q", part)
-	}
-	if lo < min || hi > max || lo > hi {
-		return nil, fmt.Errorf("range %q out of bounds [%d, %d]", part, min, max)
-	}
-	result := make([]int, 0, hi-lo+1)
-	for i := lo; i <= hi; i++ {
-		result = append(result, i)
-	}
-	return result, nil
 }
