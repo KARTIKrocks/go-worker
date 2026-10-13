@@ -141,14 +141,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: always()
-    needs: [test, examples, coverage, lint, vuln]
+    needs: [common-mk, test, examples, coverage, lint, vuln]
     steps:
       - name: Verify every job succeeded
         env:
           NEEDS: ${{ toJSON(needs) }}
         run: |
           echo "$NEEDS" | jq -r 'to_entries[] | "\(.value.result)\t\(.key)"'
-          if echo "$NEEDS" | jq -e 'any(.[]; .result != "success")' >/dev/null; then
+          # common-mk only runs on pull requests, so a skip is expected on push.
+          if echo "$NEEDS" | jq -e 'to_entries | any(.[]; .value.result != "success" and (.key != "common-mk" or .value.result != "skipped"))' >/dev/null; then
             echo "::error::one or more CI jobs did not succeed"
             exit 1
           fi
