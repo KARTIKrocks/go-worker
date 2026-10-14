@@ -1,0 +1,88 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "website/**"
+      - ".github/workflows/docs.yml"
+  # Lets a docs redeploy be triggered without a code change (e.g. after
+  # flipping the Pages source, or to recover from a failed deploy).
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Supersede an in-flight run when a PR is pushed to again. Deploys from main
+# are never cancelled — a half-finished Pages upload is worse than a slow one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    working-directory: website
+
+jobs:
+  # Lint, typecheck, and a narrowed build. DOCS_FAST_BUILD limits this to the
+  # unreleased docs plus the newest version, which is what a PR actually
+  # changes — rebuilding every historical snapshot on every PR is wasted CI.
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - run: npm ci
+      # `biome check` is formatter + linter + import sorting, so this is the
+      # format gate as well as the lint gate. Named explicitly because a step
+      # called "lint" reads like formatting is unchecked, and it is not.
+      - name: Lint and format check (Biome)
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build:fast
+
+  # Full build of every live version, then publish. Only from main.
+  deploy:
+    name: deploy
+    # Pinned to main rather than "not a pull request". workflow_dispatch can be
+    # run against any ref, so the looser condition would let a feature branch
+    # publish itself to Pages.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: check
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: website/build
+      - id: deployment
+        uses: actions/deploy-pages@v5

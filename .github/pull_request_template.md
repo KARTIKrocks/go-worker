@@ -1,3 +1,5 @@
+<!-- A PR body is a form, not a document; its sections start at h2 by design. -->
+<!-- markdownlint-disable-next-line MD041 -->
 ## Summary
 
 <!-- Brief description of what this PR does and why -->

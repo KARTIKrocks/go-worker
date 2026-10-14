@@ -1,0 +1,54 @@
+// This file is not used by "docusaurus start/build" commands.
+// It is here to improve your IDE experience (type-checking, autocompletion...),
+// and can also run the package.json "typecheck" script manually.
+//
+// NOTE: this deliberately does NOT extend "@docusaurus/tsconfig".
+// That base config sets "baseUrl", which TypeScript 7 removed outright, and an
+// inherited option cannot be unset by the config that extends it. Its contents
+// are inlined below instead — it is a dozen lines, and this keeps the site on
+// current TypeScript. Re-check it when Docusaurus ships a TS 7 compatible base.
+{
+  "compilerOptions": {
+    // --- inlined from @docusaurus/tsconfig ---
+    "allowJs": true,
+    "esModuleInterop": true,
+    "jsx": "preserve",
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "moduleResolution": "bundler",
+    "module": "esnext",
+    "noEmit": true,
+    "skipLibCheck": true,
+    // Without baseUrl, path targets resolve relative to the tsconfig that
+    // declares them — which is why this has to live here and not in a base.
+    "paths": {
+      "@site/*": ["./*"]
+    },
+
+    // --- strictness this site opts into ---
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "useUnknownInCatchVariables": true,
+    // noPropertyAccessFromIndexSignature is deliberately off: CSS modules are
+    // typed as a bare index signature, so the rule cannot validate those keys
+    // either way and only forces styles['card'] over styles.card everywhere.
+
+    // Dead code
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+
+    // Module correctness — every file must be transpilable in isolation,
+    // which is what the bundler actually does.
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src/**/*", "docusaurus.config.ts", "sidebars.ts"],
+  "exclude": [".docusaurus", "build", "node_modules"]
+}

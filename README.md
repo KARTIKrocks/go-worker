@@ -1,31 +1,85 @@
-# go-worker
+<!-- The centred logo block opens the file, so there is no h1 on line 1. -->
+<!-- markdownlint-disable-next-line MD041 -->
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="website/static/img/logo-dark.svg">
+    <img src="website/static/img/logo.svg" alt="go-worker" width="104" height="104">
+  </picture>
+</p>
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/KARTIKrocks/go-worker.svg)](https://pkg.go.dev/github.com/KARTIKrocks/go-worker)
-[![CI](https://github.com/KARTIKrocks/go-worker/actions/workflows/ci.yml/badge.svg)](https://github.com/KARTIKrocks/go-worker/actions/workflows/ci.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/KARTIKrocks/go-worker)](https://goreportcard.com/report/github.com/KARTIKrocks/go-worker)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/KARTIKrocks/go-worker)](go.mod)
-[![License](https://img.shields.io/github/license/KARTIKrocks/go-worker)](LICENSE)
-[![GitHub tag](https://img.shields.io/github/v/tag/KARTIKrocks/go-worker)](https://github.com/KARTIKrocks/go-worker/releases)
+<h1 align="center">go-worker</h1>
 
-A high-performance, zero-dependency worker pool for Go with retries, scheduling, and observability.
+<p align="center">
+  A high-performance, zero-dependency worker pool for Go with retries, panic
+  recovery, graceful shutdown, typed futures, error groups, batching, and a
+  cron scheduler.
+</p>
+
+<p align="center">
+  <a href="https://pkg.go.dev/github.com/KARTIKrocks/go-worker"><img src="https://pkg.go.dev/badge/github.com/KARTIKrocks/go-worker.svg" alt="Go Reference"></a>
+  <a href="https://github.com/KARTIKrocks/go-worker/releases"><img src="https://img.shields.io/github/v/tag/KARTIKrocks/go-worker?filter=v*&amp;label=release" alt="Latest release"></a>
+  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/KARTIKrocks/go-worker" alt="Go version"></a>
+  <a href="https://github.com/KARTIKrocks/go-worker/actions/workflows/ci.yml"><img src="https://github.com/KARTIKrocks/go-worker/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://codecov.io/gh/KARTIKrocks/go-worker"><img src="https://codecov.io/gh/KARTIKrocks/go-worker/branch/main/graph/badge.svg" alt="Coverage"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/KARTIKrocks/go-worker" alt="License: MIT"></a>
+</p>
+
+<p align="center">
+  <b><a href="https://kartikrocks.github.io/go-worker/">Documentation</a></b> ·
+  <b><a href="https://pkg.go.dev/github.com/KARTIKrocks/go-worker">API Reference</a></b> ·
+  <b><a href="CHANGELOG.md">Changelog</a></b>
+</p>
+
+## Why go-worker?
+
+A `go` statement and a `sync.WaitGroup` get you concurrency. Running background
+work safely in production — bounded, retried, cancellable, observable, and shut
+down cleanly — is everything past that:
+
+| Capability | go-worker | Goroutines + WaitGroup |
+| - | - | - |
+| Bounded concurrency and backpressure | ✓ | You build it |
+| Retries with backoff, jitter, and permanent errors | ✓ | You build it |
+| Panic recovery with stack traces | ✓ | You build it |
+| Per-attempt timeouts and cancellation | ✓ | You build it |
+| Graceful drain and forced shutdown | ✓ | You build it |
+| Cron, interval, and one-shot scheduling | ✓ | You build it |
+| Debounce, throttle, and rate limiting | ✓ | You build it |
+| Metrics and lifecycle hooks | ✓ | You build it |
+
+All of it in the standard library only — nothing to audit, nothing to update.
+
+## Performance
+
+```text
+Submit            0.9 µs/op    5 allocs   (sustained, full queue)
+SubmitWait        1.5 µs/op    8 allocs   (submit, run, and hand back the result)
+Throughput       ~1.1M jobs/s             (no-op jobs, 8 workers)
+```
+
+An 8-worker pool with 12 goroutines submitting no-op jobs — so these are the
+pool's own overhead, not your jobs'. Reproduce with
+`go test -bench=. -benchmem ./...`; full numbers in [Benchmarks](#benchmarks)
+below.
 
 ## Features
 
-- **Worker Pool** — configurable goroutine pool with bounded queue
-- **Retries** — automatic retries with exponential backoff
-- **Panic Recovery** — workers survive panics and keep processing
-- **Middleware** — composable chain for logging, tracing, metrics
-- **Lifecycle Hooks** — callbacks for job start/complete/fail and worker start/stop
-- **Metrics** — atomic counters for submitted/completed/failed/panicked/active/latency
-- **Pause/Resume** — flow control without shutdown
-- **ErrorGroup & Group** — fan-out/fan-in with error collection or cancel-on-first-error
-- **Batch** — generic batch processor for bulk operations
-- **Future** — generic typed async results
-- **Scheduler** — cron expressions, fixed intervals, daily times, one-shot
-- **Ticker / Debouncer / Throttler / RateLimiter** — common patterns built-in
-- **Zero Dependencies** — stdlib only
+- **Worker Pool**: A fixed set of goroutines and a bounded queue, with blocking, non-blocking, and context-aware submits
+- **Retries**: Exponential backoff, a delay cap, jitter, per-attempt timeouts, and `Permanent` errors that skip retrying
+- **Panic Recovery**: A panicking job fails with a `*PanicError` carrying its stack trace; the worker keeps running
+- **Graceful Shutdown**: `Close` drains the queue; `CloseWithTimeout` force-cancels after a deadline
+- **Pause/Resume**: Stop picking up new work without shutting down
+- **Middleware**: Wrap every attempt for logging, tracing, or metrics
+- **Lifecycle Hooks**: Callbacks for job start/complete/fail and worker start/stop
+- **Typed Futures**: Generic async results with `SubmitTyped` and `Future[T]`
+- **ErrorGroup & Group**: Fan-out/fan-in with cancel-on-first-error or full error collection
+- **Batch**: Generic chunked processing for bulk operations
+- **Scheduler**: Cron expressions, intervals, daily times, and one-shot tasks with overlap policies and jitter
+- **Ticker / Debouncer / Throttler / RateLimiter**: Common flow-control patterns, built on the pool
+- **Metrics**: Atomic counters, success rate, and throughput
+- **Zero Dependencies**: Standard library only
 
-## Install
+## Installation
 
 ```bash
 go get github.com/KARTIKrocks/go-worker
@@ -34,278 +88,142 @@ go get github.com/KARTIKrocks/go-worker
 ## Quick Start
 
 ```go
-pool, err := worker.NewPool(
-    worker.WithWorkers(8),
-    worker.WithQueueSize(500),
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "time"
+
+    "github.com/KARTIKrocks/go-worker"
 )
-if err != nil {
-    log.Fatal(err)
-}
-defer pool.Close()
 
-// Fire and forget
-pool.Submit(func(ctx context.Context) error {
-    fmt.Println("Hello from worker!")
-    return nil
-})
-
-// Wait for completion
-err = pool.SubmitWait(ctx, func(ctx context.Context) error {
-    return doExpensiveWork(ctx)
-})
-```
-
-## Configuration
-
-All configuration uses functional options:
-
-```go
-pool, err := worker.NewPool(
-    worker.WithWorkers(8),           // goroutine count (default: 4)
-    worker.WithQueueSize(500),       // buffered channel size (default: 100)
-    worker.WithJobTimeout(time.Minute), // timeout per attempt (default: 0=none)
-    worker.WithMaxRetries(3),        // retry failed jobs (default: 0)
-    worker.WithRetryDelay(time.Second), // base retry delay (default: 1s)
-    worker.WithRetryBackoff(true),      // exponential backoff (default: true)
-    worker.WithMaxRetryDelay(time.Minute), // cap retry delay (default: 0=no cap)
-    worker.WithRetryJitter(0.2),     // randomize retry delays by up to 20% (default: 0)
-    worker.WithPanicHandler(func(job worker.Job, r any) {
-        log.Printf("panic: %v", r)
-    }),
-    worker.WithLogger(slogLogger),   // any Logger interface
-    worker.WithMiddleware(mw1, mw2), // middleware chain
-    worker.WithHooks(worker.Hooks{
-        OnJobStart:    func(j worker.Job) { /* ... */ },
-        OnJobComplete: func(j worker.Job, d time.Duration) { /* ... */ },
-        OnJobFailed:   func(j worker.Job, err error, d time.Duration) { /* ... */ },
-        OnWorkerStart: func(id int) { /* ... */ },
-        OnWorkerStop:  func(id int) { /* ... */ },
-    }),
-)
-```
-
-## Retries and Panics
-
-With `WithMaxRetries(n)`, a failed job is retried up to `n` times with the configured delay, backoff and jitter. `WithJobTimeout` applies to each attempt separately. A job is not retried when:
-
-- it succeeds,
-- its context is cancelled (by the submitter or by a forced close),
-- it returns an error wrapped with `worker.Permanent`,
-- it panics (a panic is a bug, and retrying rarely helps).
-
-```go
-pool.Submit(func(ctx context.Context) error {
-    user, err := db.GetUser(ctx, id)
-    if errors.Is(err, sql.ErrNoRows) {
-        return worker.Permanent(err) // retrying will not help
+func main() {
+    pool, err := worker.NewPool(
+        worker.WithWorkers(8),
+        worker.WithQueueSize(500),
+        worker.WithMaxRetries(3),
+        worker.WithJobTimeout(time.Minute), // per attempt
+    )
+    if err != nil {
+        log.Fatal(err)
     }
-    return err // other errors are retried
-})
-```
+    defer pool.Close() // drains queued and running jobs
 
-A panicking job returns a `*worker.PanicError` that matches `worker.ErrJobPanic` and includes the stack trace:
+    // Fire and forget
+    if err := pool.Submit(func(ctx context.Context) error {
+        fmt.Println("hello from a worker")
+        return nil
+    }); err != nil {
+        log.Printf("submit: %v", err) // ErrPoolClosed
+    }
 
-```go
-if perr, ok := errors.AsType[*worker.PanicError](err); ok {
-    log.Printf("panic: %v\n%s", perr.Value, perr.Stack)
+    // Wait for the result, after retries
+    if err := pool.SubmitWait(context.Background(), sendEmail); err != nil {
+        log.Printf("email failed: %v", err)
+    }
+
+    // Typed async result
+    future := worker.SubmitTyped(pool, countUsers)
+    n, err := future.Await(context.Background())
+    if err != nil {
+        log.Printf("count failed: %v", err)
+    }
+    fmt.Println("users:", n)
 }
 ```
 
-Panics in hooks and in the panic handler are also recovered, so they can't crash the worker.
-
-## Submitting Jobs
-
-```go
-// Function (fire and forget)
-pool.Submit(func(ctx context.Context) error {
-    return doWork(ctx)
-})
-
-// Function (wait for result)
-err := pool.SubmitWait(ctx, func(ctx context.Context) error {
-    return doWork(ctx)
-})
-
-// Non-blocking (returns ErrPoolFull if queue is full)
-err := pool.TrySubmit(func(ctx context.Context) error {
-    return doWork(ctx)
-})
-
-// With context (blocks until enqueued or ctx expires)
-err := pool.SubmitContext(ctx, myJob)
-
-// Job interface
-type MyJob struct{ ID string }
-func (j *MyJob) Process(ctx context.Context) error { return nil }
-pool.SubmitJob(&MyJob{ID: "1"})
-```
-
-## Typed Results (Future)
-
-```go
-future := worker.SubmitTyped(pool, func(ctx context.Context) (int, error) {
-    return computeSomething(ctx)
-})
-
-val, err := future.Await(ctx)
-
-if future.Done() {
-    // result is ready
-}
-```
-
-## Error Group
-
-Cancel all jobs on first error (like `errgroup.Group`):
-
-```go
-g := worker.NewErrorGroup(pool)
-
-g.Go(func(ctx context.Context) error { return fetchA(ctx) })
-g.Go(func(ctx context.Context) error { return fetchB(ctx) })
-g.Go(func(ctx context.Context) error { return fetchC(ctx) })
-
-err := g.Wait() // first error, or nil
-```
-
-## Group (collect all errors)
-
-```go
-g := worker.NewGroup(pool)
-
-g.Go(func(ctx context.Context) error { return task1(ctx) })
-g.Go(func(ctx context.Context) error { return task2(ctx) })
-
-errs := g.WaitAll() // []error
-```
-
-## Batch Processing
-
-```go
-batch := worker.NewBatch(pool, 100, func(ctx context.Context, users []User) error {
-    return db.BulkInsert(ctx, users)
-})
-
-batch.Add(users...)
-err := batch.Process(ctx) // cancels remaining on first error
-
-// Or collect all errors:
-errs := batch.ProcessAll(ctx)
-```
-
-## Scheduler
+Recurring work:
 
 ```go
 sched := worker.NewScheduler(pool)
-
-// Fixed interval
 sched.EveryFunc("cleanup", 5*time.Minute, cleanup)
-
-// Cron expression: *, ranges, lists, steps (*/15, 0-30/10),
-// names (MON-FRI, JAN) and macros (@daily, @hourly, ...)
-sched.CronFunc("report", "0 9 * * MON-FRI", generateReport)
-
-// Daily at specific times
-sched.DailyFunc("backup", []string{"02:00", "14:00"}, backup)
-
-// One-shot
-sched.OnceFunc("migrate", targetTime, migrate)
-
-// With options
-sched.EveryFunc("sync", time.Hour, syncData,
-    worker.WithRunImmediate(),
-    worker.WithJitter(30*time.Second),
-    worker.WithOverlapPolicy(worker.OverlapSkip),
-    worker.WithMaxRuns(10),
-)
-
-sched.Start()
-defer sched.Stop() // permanent: a stopped scheduler cannot be restarted
-
-// Runtime control
-sched.Pause("sync")
-sched.Resume("sync")
-sched.Trigger("sync")  // run now; respects pause, max runs and overlap policy
-sched.Remove("sync")
-info := sched.TaskInfo("cleanup")
-```
-
-## Middleware
-
-```go
-func timingMiddleware(next func(ctx context.Context) error) func(ctx context.Context) error {
-    return func(ctx context.Context) error {
-        start := time.Now()
-        err := next(ctx)
-        log.Printf("job took %v", time.Since(start))
-        return err
-    }
+if err := sched.CronFunc("report", "0 9 * * MON-FRI", sendReport); err != nil {
+    log.Fatal(err) // invalid cron expression
 }
-
-pool, _ := worker.NewPool(worker.WithMiddleware(timingMiddleware))
+sched.Start()
+defer sched.Stop()
 ```
 
-## Metrics
+> **Note:** go-worker is pre-1.0, and `v0.1.0` changed several defaults — most
+> notably, `JobTimeout` now defaults to no timeout and applies to each attempt.
+> See the [changelog](CHANGELOG.md) when upgrading.
 
-```go
-snap := pool.Snapshot()
+## Documentation
 
-fmt.Printf("Submitted:  %d\n", snap.JobsSubmitted)
-fmt.Printf("Completed:  %d\n", snap.JobsCompleted)
-fmt.Printf("Failed:     %d\n", snap.JobsFailed)
-fmt.Printf("Panicked:   %d\n", snap.JobsPanicked)
-fmt.Printf("Retried:    %d\n", snap.JobsRetried)
-fmt.Printf("Active:     %d\n", snap.ActiveWorkers)
-fmt.Printf("Queued:     %d\n", snap.QueueLength)
-fmt.Printf("Avg Dur:    %v\n", snap.AverageJobDuration())
-fmt.Printf("Success:    %.1f%%\n", snap.SuccessRate()*100)
-fmt.Printf("Throughput: %.1f/s\n", snap.Throughput())
+Full guides live at **[kartikrocks.github.io/go-worker](https://kartikrocks.github.io/go-worker/)**:
+
+| Guide | Covers |
+| --- | --- |
+| [Getting Started](https://kartikrocks.github.io/go-worker/docs/getting-started) | Create a pool and submit work |
+| [Worker Pool](https://kartikrocks.github.io/go-worker/docs/pool) | Every way to submit, and what each waits for |
+| [Configuration](https://kartikrocks.github.io/go-worker/docs/configuration) | Every option and its default |
+| [Retries and Panics](https://kartikrocks.github.io/go-worker/docs/retries) | What is retried, backoff, jitter, `PanicError` |
+| [Lifecycle](https://kartikrocks.github.io/go-worker/docs/lifecycle) | Pause, resume, graceful and forced shutdown |
+| [Middleware](https://kartikrocks.github.io/go-worker/docs/middleware) | Wrapping every attempt |
+| [Hooks](https://kartikrocks.github.io/go-worker/docs/hooks) | Job and worker lifecycle callbacks |
+| [Future](https://kartikrocks.github.io/go-worker/docs/future) | Typed async results |
+| [Groups](https://kartikrocks.github.io/go-worker/docs/groups) | `Group` and `ErrorGroup` fan-out |
+| [Batch](https://kartikrocks.github.io/go-worker/docs/batch) | Chunked bulk processing |
+| [Scheduler](https://kartikrocks.github.io/go-worker/docs/scheduler) | Tasks, overlap policies, runtime control |
+| [Schedules and Cron](https://kartikrocks.github.io/go-worker/docs/schedules) | Cron syntax, time zones, custom schedules |
+| [Ticker](https://kartikrocks.github.io/go-worker/docs/ticker), [Debouncer](https://kartikrocks.github.io/go-worker/docs/debouncer), [Throttler](https://kartikrocks.github.io/go-worker/docs/throttler), [Rate Limiter](https://kartikrocks.github.io/go-worker/docs/rate-limiter) | Flow-control helpers |
+| [Metrics](https://kartikrocks.github.io/go-worker/docs/metrics) | `Snapshot`, derived rates, Prometheus export |
+| [Errors](https://kartikrocks.github.io/go-worker/docs/errors) | Sentinel errors and matching |
+
+Exact type signatures are generated from source on
+[pkg.go.dev](https://pkg.go.dev/github.com/KARTIKrocks/go-worker).
+
+Runnable programs are in [`examples/`](examples/) — basic, retries, middleware,
+future, errorgroup, batch, scheduler, rate-limiter, and graceful-shutdown.
+
+## Benchmarks
+
+Measured on an Intel i5-11400H @ 2.70GHz (12 cores), Go 1.27, Linux; median of
+three runs. Each benchmark uses an 8-worker pool with 12 goroutines submitting
+no-op jobs in parallel.
+
+```bash
+go test -bench=. -benchmem ./...
 ```
 
-## Pool Control
+| Benchmark | ns/op | B/op | Allocs |
+| --- | --- | --- | --- |
+| `Submit` | 909 | 248 | 5 |
+| `SubmitWait` | 1,473 | 392 | 8 |
+| `SubmitWait` with one middleware | 1,466 | 440 | 11 |
+| `TrySubmit` | 60 | 7 | 0 |
 
-```go
-pool.Pause()   // workers finish current job, then wait
-pool.Resume()  // workers continue
+`Submit` runs with the queue full, so its figure is the pool's steady-state
+throughput. `TrySubmit` mostly measures the rejection path: with the queue full,
+most calls return `ErrPoolFull` immediately.
 
-pool.Close()   // graceful shutdown (waits for all jobs)
-pool.CloseWithTimeout(30 * time.Second) // force after timeout
-```
+## Thread Safety
 
-## Helpers
+Every `Pool`, `Scheduler`, `Future`, group, and flow-control helper method is
+safe for concurrent use. `Batch` is the exception: do not call `Add` while
+`Process` runs.
 
-```go
-// Ticker — submit a job at fixed intervals
-ticker := worker.NewTickerFunc(pool, time.Minute, heartbeat)
-ticker.Start()
-defer ticker.Stop()
+## Security
 
-// Debouncer — only execute the last call after a quiet period
-debouncer := worker.NewDebouncer(pool, 500*time.Millisecond)
-debouncer.Submit(job) // only last one within 500ms runs
+Every push and pull request to `main` is scanned by
+[CodeQL](https://github.com/KARTIKrocks/go-worker/actions/workflows/codeql.yml),
+and `govulncheck` gates every merge on advisories reachable from this code's
+call graph. go-worker has no third-party dependencies, so that scan covers the
+standard library it uses; Dependabot tracks the GitHub Actions and the docs
+site.
 
-// Throttler — at most one execution per interval
-throttler := worker.NewThrottler(pool, time.Second)
-ok := throttler.Submit(job) // runs at most 1/sec; false if throttled or rejected
-
-// RateLimiter — token bucket
-rl := worker.NewRateLimiter(pool, 10, time.Second) // 10 jobs/sec
-defer rl.Stop()
-err := rl.Submit(ctx, job)     // waits for a token
-err = rl.TrySubmit(job)        // ErrRateLimited if no token is available
-```
-
-## Errors
-
-```go
-errors.Is(err, worker.ErrPoolClosed)    // pool was closed
-errors.Is(err, worker.ErrPoolFull)      // queue is full (TrySubmit)
-errors.Is(err, worker.ErrJobPanic)      // job panicked
-errors.Is(err, worker.ErrInvalidConfig) // bad configuration
-errors.Is(err, worker.ErrRateLimited)   // no token available (RateLimiter.TrySubmit)
-errors.Is(err, worker.ErrLimiterStopped) // RateLimiter was stopped
-```
+Please report vulnerabilities privately through
+[GitHub Security Advisories](https://github.com/KARTIKrocks/go-worker/security/advisories/new),
+not public issues.
 
 ## License
 
-MIT
+[MIT](LICENSE)
+
+## Contributing
+
+Contributions welcome — open an
+[issue](https://github.com/KARTIKrocks/go-worker/issues) to discuss a change, or
+send a pull request. Run `make ci` before opening one.
