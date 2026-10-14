@@ -1,6 +1,9 @@
 include common.mk
 
-.PHONY: all setup deps tidy tidy-check test test-v vet lint lint-fix fix fmt vuln build build-examples bench cover clean ci
+MARKDOWNLINT := website/node_modules/.bin/markdownlint-cli2
+MARKDOWN_FILES = $(shell git ls-files -co --exclude-standard -- '*.md' '*.mdx')
+
+.PHONY: all setup deps tidy tidy-check test test-v vet lint lint-fix fix fmt vuln build build-examples bench cover clean lint-docs lint-docs-fix ci
 
 all: fmt vet lint test build build-examples
 
@@ -83,6 +86,18 @@ cover:
 clean:
 	rm -f coverage.out coverage.html
 
-## Everything the CI merge gate checks, in one target. Heavier than `make all`
-## (needs the network for the advisory database); run it before opening a PR.
+## Lint every Markdown file in the repo (needs Node)
+lint-docs: $(MARKDOWNLINT)
+	@$(MARKDOWNLINT) $(MARKDOWN_FILES)
+
+## Lint Markdown and apply automatic fixes
+lint-docs-fix: $(MARKDOWNLINT)
+	@$(MARKDOWNLINT) --fix $(MARKDOWN_FILES)
+
+$(MARKDOWNLINT): website/package-lock.json
+	cd website && npm ci
+	@touch $@
+
+## The Go checks of the CI merge gate. Heavier than `make all` (needs the
+## network for the advisory database). Markdown lint is separate: make lint-docs
 ci: tidy-check vet lint test build-examples vuln

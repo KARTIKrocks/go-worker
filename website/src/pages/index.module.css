@@ -1,0 +1,247 @@
+/* Homepage styles. Section layout responds to the width of its container
+   rather than the viewport, so the same blocks work wherever they are placed. */
+
+.hero {
+  container: hero / inline-size;
+  padding-block: clamp(3rem, 8vw, 6rem) clamp(2rem, 5vw, 3.5rem);
+}
+
+.title {
+  font-size: clamp(2.25rem, 6cqi, 3.25rem);
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--ifm-heading-color);
+  margin-block-end: 1rem;
+  text-wrap: balance;
+}
+
+.subtitle {
+  font-size: clamp(1rem, 2.5cqi, 1.15rem);
+  max-inline-size: 44rem;
+  margin-block-end: 2rem;
+  text-wrap: pretty;
+}
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-block-end: 2rem;
+
+  /* Full-width, stacked buttons once the hero is too narrow for a row. */
+  @container hero (inline-size < 30rem) {
+    flex-direction: column;
+
+    & > * {
+      inline-size: 100%;
+    }
+  }
+}
+
+.install {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--ifm-toc-border-color);
+  border-radius: 0.5rem;
+  background-color: var(--ifm-background-surface-color);
+  overflow-x: auto;
+  scrollbar-width: thin;
+
+  & .prompt {
+    user-select: none;
+    opacity: 0.6;
+  }
+
+  & code {
+    background: none;
+    padding: 0;
+    white-space: nowrap;
+  }
+}
+
+.features {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(17rem, 100%), 1fr));
+  gap: 1rem;
+  padding-block-end: clamp(3rem, 8vw, 5rem);
+}
+
+.section {
+  container: section / inline-size;
+  padding-block-end: clamp(3rem, 8vw, 5rem);
+}
+
+.sectionTitle {
+  font-size: clamp(1.5rem, 3.5cqi, 2rem);
+  font-weight: 700;
+  margin-block-end: 0.75rem;
+  color: var(--ifm-heading-color);
+}
+
+.sectionLead {
+  max-inline-size: 44rem;
+  margin-block-end: 1.75rem;
+  opacity: 0.85;
+  text-wrap: pretty;
+}
+
+.sectionNote {
+  margin-block: 1.25rem 0;
+  font-size: 0.85rem;
+  opacity: 0.75;
+  text-wrap: pretty;
+}
+
+/* Tables overflow rather than squeezing their columns on narrow screens. */
+.tableScroll {
+  overflow-x: auto;
+  scrollbar-width: thin;
+  border: 1px solid var(--ifm-toc-border-color);
+  border-radius: 0.5rem;
+  background-color: var(--ifm-background-surface-color);
+}
+
+.compare {
+  /* Infima styles tables as `display: block; width: max-content`, which would
+     leave the table short of its container. */
+  display: table;
+  inline-size: 100%;
+  border-collapse: collapse;
+  margin-block-end: 0;
+  font-size: 0.9rem;
+
+  /* Cell padding and separators first; the more specific header and body
+     overrides follow, so source order matches specificity order. */
+  & :is(th, td) {
+    padding: 0.7rem 1rem;
+    text-align: start;
+    border: none;
+    border-block-end: 1px solid var(--ifm-toc-border-color);
+  }
+
+  /* The container owns the border and the scroll; rows only need separators. */
+  & tbody tr {
+    background-color: transparent;
+    border: none;
+
+    &:last-child > :is(th, td) {
+      border-block-end: none;
+    }
+  }
+
+  & thead th {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    opacity: 0.7;
+    white-space: nowrap;
+  }
+
+  & tbody th {
+    font-weight: 400;
+  }
+}
+
+.check {
+  color: var(--ifm-color-primary);
+  font-weight: 700;
+}
+
+.diy {
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
+  gap: 1rem;
+}
+
+.stat {
+  padding: 1.25rem;
+  border: 1px solid var(--ifm-toc-border-color);
+  border-radius: 0.5rem;
+  background-color: var(--ifm-background-surface-color);
+}
+
+.statLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.7;
+  margin-block-end: 0.5rem;
+  color: var(--ifm-heading-color);
+}
+
+/* Proportional figures, not tabular: these are standalone display values, and
+   tabular digits read loose at this size. */
+.statValue {
+  font-size: clamp(1.75rem, 4cqi, 2.25rem);
+  font-weight: 600;
+  line-height: 1.1;
+  margin-block-end: 0.4rem;
+  color: var(--ifm-heading-color);
+}
+
+.statUnit {
+  font-size: 0.9rem;
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+.statContext {
+  font-size: 0.8rem;
+  margin-block-end: 0;
+  opacity: 0.7;
+}
+
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.card {
+  padding: 1rem;
+  border: 1px solid var(--ifm-toc-border-color);
+  border-radius: 0.5rem;
+  background-color: var(--ifm-background-surface-color);
+
+  /* Hover feedback only where hover exists, so touch screens never get a
+     card stuck in its hover state after a tap. */
+  @media (hover: hover) {
+    &:hover {
+      border-color: var(--ifm-color-primary);
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    transition: border-color 150ms ease;
+  }
+
+  & h2 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-block-end: 0.35rem;
+    color: var(--ifm-heading-color);
+  }
+
+  & p {
+    font-size: 0.82rem;
+    margin-block-end: 0;
+    opacity: 0.8;
+  }
+}

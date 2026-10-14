@@ -126,6 +126,27 @@ jobs:
       - name: Scan
         run: govulncheck ./...
 
+  # Not in docs.yml: that workflow is path-filtered to website/**, so it would
+  # miss changes to the root README.
+  docs-lint:
+    name: lint (markdown)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - name: Install
+        working-directory: website
+        run: npm ci
+      # From the repo root: the config's globs resolve against the working
+      # directory.
+      - name: Lint Markdown
+        run: website/node_modules/.bin/markdownlint-cli2 "**/*.md" "**/*.mdx"
+
   # THIS IS THE ONLY JOB THAT SHOULD BE A REQUIRED STATUS CHECK.
   #
   # Requiring the matrix jobs directly is brittle: their check names embed the
@@ -141,7 +162,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: always()
-    needs: [common-mk, test, examples, coverage, lint, vuln]
+    needs: [common-mk, test, examples, coverage, lint, vuln, docs-lint]
     steps:
       - name: Verify every job succeeded
         env:

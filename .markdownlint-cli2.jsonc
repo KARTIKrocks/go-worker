@@ -1,0 +1,47 @@
+// Structural Markdown linting for the whole repo: the docs site and the root
+// Markdown files. It checks structure, not prose. Files are passed by the
+// caller: CI globs every .md/.mdx, `make lint-docs` lists git's view of the
+// tree so locally excluded files are skipped.
+{
+  "gitignore": true,
+
+  "ignores": [
+    "**/node_modules/**",
+    "website/build/**",
+    "website/.docusaurus/**",
+    // Generated from GitHub release notes, whose bare URLs trip MD034.
+    "CHANGELOG.md"
+  ],
+
+  "config": {
+    "default": true,
+
+    // Tables, links, and Go identifiers can't be wrapped without breaking them.
+    "MD013": false,
+
+    // Docusaurus pages carry the title in front matter and still open with an
+    // h1; this stops both being read as competing h1s.
+    "MD025": { "front_matter_title": "" },
+    "MD041": { "front_matter_title": "" },
+
+    // Reference pages legitimately repeat headings like "Options" per section.
+    "MD024": { "siblings_only": true },
+
+    // The centred README header has no Markdown equivalent.
+    "MD033": {
+      "allowed_elements": [
+        "a",
+        "b",
+        "br",
+        "details",
+        "div",
+        "h1",
+        "img",
+        "p",
+        "picture",
+        "source",
+        "summary"
+      ]
+    }
+  }
+}

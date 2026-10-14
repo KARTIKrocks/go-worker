@@ -1,0 +1,138 @@
+/**
+ * Global styles. Infima is bundled by the classic theme.
+ *
+ * Emerald brand, slate neutrals, sky accent for inline code. The brand is
+ * the 700 step in light mode so white button text meets WCAG AA contrast, and
+ * the accent is 700/300 so inline code stays readable in both themes.
+ *
+ * Only two brand colours are declared per theme; Infima's six primary shades
+ * are mixed from them in OKLCH, which keeps perceived lightness steps even
+ * instead of hand-picking six hex values that drift out of step.
+ *
+ * Infima drives `color-scheme` from `--ifm-color-scheme`, which it flips under
+ * [data-theme='dark']. That makes `light-dark()` authoritative here, so every
+ * token is a single declaration instead of a light block plus a dark override.
+ */
+
+@layer worker.tokens, worker.base, worker.content;
+
+@layer worker.tokens {
+  :root {
+    --worker-brand: light-dark(#047857, #34d399);
+    --worker-accent: light-dark(#0369a1, #7dd3fc);
+    --worker-surface: light-dark(
+      oklch(96.8% 0.007 247.9),
+      oklch(27.9% 0.041 260)
+    );
+
+    --ifm-color-primary: var(--worker-brand);
+    --ifm-color-primary-dark: color-mix(
+      in oklch,
+      var(--worker-brand) 90%,
+      black
+    );
+    --ifm-color-primary-darker: color-mix(
+      in oklch,
+      var(--worker-brand) 85%,
+      black
+    );
+    --ifm-color-primary-darkest: color-mix(
+      in oklch,
+      var(--worker-brand) 70%,
+      black
+    );
+    --ifm-color-primary-light: color-mix(
+      in oklch,
+      var(--worker-brand) 90%,
+      white
+    );
+    --ifm-color-primary-lighter: color-mix(
+      in oklch,
+      var(--worker-brand) 85%,
+      white
+    );
+    --ifm-color-primary-lightest: color-mix(
+      in oklch,
+      var(--worker-brand) 70%,
+      white
+    );
+
+    /* Neutrals — slate */
+    --ifm-background-color: light-dark(#ffffff, #0f172a);
+    --ifm-background-surface-color: light-dark(#f8fafc, #1e293b);
+    --ifm-font-color-base: light-dark(#334155, #e2e8f0);
+    --ifm-heading-color: light-dark(#0f172a, #f1f5f9);
+    --ifm-toc-border-color: light-dark(#e2e8f0, #334155);
+    --ifm-color-emphasis-300: light-dark(#e2e8f0, #334155);
+
+    --ifm-code-font-size: 90%;
+    --ifm-font-family-base:
+      "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+    --docusaurus-highlighted-code-line-bg: light-dark(
+      rgb(0 0 0 / 0.1),
+      rgb(255 255 255 / 0.1)
+    );
+  }
+}
+
+@layer worker.base {
+  :where(html) {
+    scroll-padding-block-start: 5rem;
+    /* Standard scrollbar properties, replacing the ::-webkit-scrollbar
+       pseudo-elements; supported by every current engine. */
+    scrollbar-color: var(--ifm-toc-border-color) var(--ifm-background-color);
+    accent-color: var(--worker-brand);
+
+    @media (prefers-reduced-motion: no-preference) {
+      scroll-behavior: smooth;
+    }
+  }
+
+  :where(h1, h2, h3) {
+    text-wrap: balance;
+  }
+
+  :where(p, li) {
+    text-wrap: pretty;
+  }
+
+  /* Inline code picks up the accent colour. */
+  :where(code) {
+    background-color: var(--worker-surface);
+    border: none;
+    color: var(--worker-accent);
+  }
+
+  :where(a) code {
+    color: inherit;
+  }
+
+  :where(a, button, summary):focus-visible {
+    outline: 2px solid var(--worker-brand);
+    outline-offset: 2px;
+  }
+}
+
+@layer worker.content {
+  /*
+   * API tables: the first column holds identifiers, so it must not wrap.
+   * The table scrolls inside its own container rather than the page.
+   */
+  .markdown table {
+    display: block;
+    overflow-x: auto;
+    max-inline-size: 100%;
+    font-size: 0.9rem;
+    scrollbar-width: thin;
+
+    & td:first-child {
+      white-space: nowrap;
+      font-family: var(--ifm-font-family-monospace);
+
+      & code {
+        white-space: nowrap;
+      }
+    }
+  }
+}
