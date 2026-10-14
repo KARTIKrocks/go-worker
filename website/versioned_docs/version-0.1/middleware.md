@@ -47,7 +47,8 @@ logging middleware logs every attempt; a tracing middleware opens a span per
 attempt, which is usually what you want for seeing retries in a trace.
 
 Each attempt's context already carries the [job timeout](./configuration.md#job-timeout),
-so the middleware's call to `next` is bounded by it.
+so it is cancelled when the timeout expires. That only stops `next` if the
+job honours its context.
 
 For something that should happen once per job — counting jobs, timing the
 whole job including retries — use [hooks](./hooks.md) instead.

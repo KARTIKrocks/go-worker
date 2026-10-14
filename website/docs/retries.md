@@ -29,8 +29,10 @@ A failed job is retried unless:
 | it panicked | a panic is a bug; running it again rarely fixes it |
 | its context was cancelled | the caller gave up, or the pool is force-closing |
 
-A **timed-out attempt is retried**: `WithJobTimeout` limits each attempt
-separately, so a slow attempt gets another go. Cancellation that comes from
+A **timed-out attempt is retried** if it returns an error: `WithJobTimeout`
+cancels each attempt's context separately, so a slow attempt that returns
+`ctx.Err()` gets another go. A job that ignores the context and returns `nil`
+after the deadline counts as a success. Cancellation that comes from
 outside the attempt — the `SubmitWait` caller's context ending, a group being
 cancelled, `CloseWithTimeout` expiring — stops the retries.
 

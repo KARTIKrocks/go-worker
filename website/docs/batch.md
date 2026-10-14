@@ -24,8 +24,9 @@ if err := batch.Process(ctx); err != nil {
 ```
 
 The processor is called once per chunk of up to `batchSize` items; the last
-chunk holds whatever is left. Each chunk is a copy, so the processor may keep
-or modify it freely.
+chunk holds whatever is left. Each chunk is a new slice, so the processor may keep
+it or reorder it freely. The copy is shallow: items holding pointers, maps, or
+slices still share that data with the originals.
 
 ## Fail fast or collect everything
 
@@ -34,7 +35,9 @@ or modify it freely.
 | `Process(ctx)` | an [`ErrorGroup`](./groups.md#errorgroup) | cancels the remaining chunks | the first error |
 | `ProcessAll(ctx)` | a [`Group`](./groups.md#group) | keeps going | every error |
 
-Use `Process` when the batch is all-or-nothing. Use `ProcessAll` when chunks
+Use `Process` when one failure should stop the rest. It is not
+a transaction: chunks that already ran, or are running when the context is
+cancelled, keep their side effects. Use `ProcessAll` when chunks
 are independent and you want to report or retry the ones that failed.
 
 Chunks run concurrently, so they can finish in any order. If order matters —

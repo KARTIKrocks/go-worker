@@ -80,8 +80,12 @@ if err := pool.Submit(sendWelcomeEmail); err != nil {
 HTTP handler that would rather return `503` than hang:
 
 ```go
-if err := pool.TrySubmit(job); errors.Is(err, worker.ErrPoolFull) {
+switch err := pool.TrySubmit(job); {
+case errors.Is(err, worker.ErrPoolFull):
     http.Error(w, "busy, try again", http.StatusServiceUnavailable)
+    return
+case err != nil: // ErrPoolClosed
+    http.Error(w, "shutting down", http.StatusServiceUnavailable)
     return
 }
 ```

@@ -77,7 +77,8 @@ logs nothing.
 
 `WithJobTimeout` limits **each attempt**, not the whole job. With three retries
 and a one-minute timeout, a job can run for up to four minutes plus the retry
-delays. An attempt that times out is retried like any other failure.
+delays. An attempt that returns an error after timing out — normally
+`context.DeadlineExceeded` — is retried like any other failure.
 
 The timeout works by cancelling the job's context. A job that ignores its
 context keeps running after the deadline and still occupies its worker, so

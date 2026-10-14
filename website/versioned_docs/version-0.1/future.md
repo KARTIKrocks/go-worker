@@ -58,6 +58,9 @@ if err != nil {
     return err
 }
 orders, err := ordersF.Await(ctx)
+if err != nil {
+    return err
+}
 ```
 
 If one failure should cancel the others, use an
@@ -80,5 +83,6 @@ only the attempt that decides the job's outcome sets the result.
 
 `SubmitTyped` submits like `Submit`: it **waits for queue space** if the queue
 is full, and the job runs with its own context, independent of the caller's.
-There is no non-blocking variant; to shed load, check `pool.QueueLength()`
-first or put a [`RateLimiter`](./rate-limiter.md) in front.
+There is no non-blocking variant. Checking `pool.QueueLength()` first is only a
+hint, since other submitters can fill the queue in between; for real load
+shedding, use `TrySubmit` with a job that sends its result on a channel.

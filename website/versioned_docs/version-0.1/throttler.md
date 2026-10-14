@@ -6,7 +6,9 @@ description: Limit a job to at most one run per interval with go-worker's Thrott
 
 # Throttler
 
-A throttler runs a job at most once per `interval`. Where a
+A throttler submits a job to the pool at most once per `interval`. It spaces
+submissions, not executions: if jobs wait in the queue, two can start closer
+together than `interval`. Where a
 [debouncer](./debouncer.md) waits for a burst to end, a throttler runs during
 the burst — just not more often than the interval allows.
 

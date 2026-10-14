@@ -7,8 +7,13 @@ description: Cap how many jobs per interval are submitted to a go-worker pool wi
 # Rate Limiter
 
 Worker count limits how many jobs run **at once**. `RateLimiter` limits how
-many start **per unit of time** — what you need when the downstream system has
+many are **submitted per unit of time** — useful when the downstream system has
 a rate limit of its own, such as an API that allows 10 calls per second.
+
+Tokens are spent at submission, not when a worker starts the job. If jobs
+back up in the queue, they can reach the downstream system in bursts above
+the rate. Keep the queue short, or enforce the limit inside the job when the
+downstream limit is strict.
 
 ```go
 rl := worker.NewRateLimiter(pool, 10, time.Second) // 10 jobs per second
