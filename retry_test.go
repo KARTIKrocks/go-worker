@@ -108,28 +108,30 @@ func TestRetry_ForwardedPanicErrorIsRetried(t *testing.T) {
 	})
 }
 
-func TestRetry_CancellationDoesNotMaskPanicOrPermanent(t *testing.T) {
+func TestRetry_CancellationDoesNotMaskJobError(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		var got atomic.Pointer[error] // not atomic.Value: the errors differ in concrete type
-		p, _ := NewPool(WithWorkers(1), WithMaxRetries(3),
-			WithHooks(Hooks{OnJobFailed: func(_ Job, err error, _ time.Duration) { got.Store(&err) }}))
-		defer p.Close()
 		sentinel := errors.New("bad input")
-		for name, fail := range map[string]func(){
-			"panic":     func() { panic("boom") },
-			"permanent": func() {},
-		} {
-			ctx, cancel := context.WithCancel(context.Background())
-			_ = p.SubmitContext(ctx, JobFunc(func(context.Context) error {
-				cancel() // the job's context is cancelled as it fails
-				fail()
-				return Permanent(sentinel)
-			}))
-			synctest.Wait()
-			err := *got.Load()
-			if want := map[string]error{"panic": ErrJobPanic, "permanent": sentinel}[name]; !errors.Is(err, want) {
-				t.Fatalf("%s: OnJobFailed got %v, want %v", name, err, want)
+		for _, retries := range []int{0, 3} {
+			var got atomic.Pointer[error] // not atomic.Value: the errors differ in concrete type
+			p, _ := NewPool(WithWorkers(1), WithMaxRetries(retries),
+				WithHooks(Hooks{OnJobFailed: func(_ Job, err error, _ time.Duration) { got.Store(&err) }}))
+			for name, fail := range map[string]func() error{
+				"panic":     func() error { panic("boom") },
+				"permanent": func() error { return Permanent(sentinel) },
+				"plain":     func() error { return sentinel },
+			} {
+				ctx, cancel := context.WithCancel(context.Background())
+				_ = p.SubmitContext(ctx, JobFunc(func(context.Context) error {
+					cancel() // the job's context is cancelled as it fails
+					return fail()
+				}))
+				synctest.Wait()
+				want := map[string]error{"panic": ErrJobPanic, "permanent": sentinel, "plain": sentinel}[name]
+				if err := *got.Load(); !errors.Is(err, want) {
+					t.Fatalf("retries=%d %s: OnJobFailed got %v, want %v", retries, name, err, want)
+				}
 			}
+			_ = p.Close()
 		}
 	})
 }

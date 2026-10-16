@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A job that failed while its own context was cancelled reported `ctx.Err()`
+  instead of the error it returned, even with no retries left. The pool now
+  stops retrying and keeps the job's error.
+
 ## [0.1.0] - 2026-09-29
 
 This release fixes a large number of concurrency and scheduling bugs found in a
