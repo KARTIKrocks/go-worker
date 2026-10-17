@@ -108,28 +108,67 @@ func TestRetry_ForwardedPanicErrorIsRetried(t *testing.T) {
 	})
 }
 
-func TestRetry_CancellationDoesNotMaskPanicOrPermanent(t *testing.T) {
+func TestRetry_CancellationDoesNotMaskJobError(t *testing.T) {
+	sentinel := errors.New("bad input")
+	cases := []struct {
+		name     string
+		fail     func(ctx context.Context) error
+		want     []error
+		wantText string // checked when set
+	}{
+		{"panic", func(context.Context) error { panic("boom") }, []error{ErrJobPanic}, ""},
+		{"permanent", func(context.Context) error { return Permanent(sentinel) }, []error{sentinel}, ""},
+		{"plain", func(context.Context) error { return sentinel }, []error{sentinel, context.Canceled}, ""},
+		{"ctx error", func(ctx context.Context) error { return ctx.Err() }, []error{context.Canceled}, "context canceled"},
+	}
+	for _, retries := range []int{0, 3} {
+		for _, tc := range cases {
+			synctest.Test(t, func(t *testing.T) {
+				var got atomic.Pointer[error] // not atomic.Value: the errors differ in concrete type
+				p, _ := NewPool(WithWorkers(1), WithMaxRetries(retries),
+					WithHooks(Hooks{OnJobFailed: func(_ Job, err error, _ time.Duration) { got.Store(&err) }}))
+				defer p.Close()
+				ctx, cancel := context.WithCancel(context.Background())
+				_ = p.SubmitContext(ctx, JobFunc(func(ctx context.Context) error {
+					cancel() // the job's context is cancelled as it fails
+					return tc.fail(ctx)
+				}))
+				synctest.Wait()
+				errp := got.Load()
+				if errp == nil {
+					t.Fatalf("retries=%d %s: OnJobFailed not called", retries, tc.name)
+				}
+				for _, want := range tc.want {
+					if !errors.Is(*errp, want) {
+						t.Fatalf("retries=%d %s: OnJobFailed got %v, want it to match %v", retries, tc.name, *errp, want)
+					}
+				}
+				if tc.wantText != "" && (*errp).Error() != tc.wantText {
+					t.Fatalf("retries=%d %s: got message %q, want %q", retries, tc.name, (*errp).Error(), tc.wantText)
+				}
+			})
+		}
+	}
+}
+
+func TestRetry_CancelledDuringDelayKeepsJobError(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		var got atomic.Pointer[error] // not atomic.Value: the errors differ in concrete type
-		p, _ := NewPool(WithWorkers(1), WithMaxRetries(3),
+		var got atomic.Pointer[error]
+		p, _ := NewPool(WithWorkers(1), WithMaxRetries(1), WithRetryDelay(time.Hour),
 			WithHooks(Hooks{OnJobFailed: func(_ Job, err error, _ time.Duration) { got.Store(&err) }}))
 		defer p.Close()
-		sentinel := errors.New("bad input")
-		for name, fail := range map[string]func(){
-			"panic":     func() { panic("boom") },
-			"permanent": func() {},
-		} {
-			ctx, cancel := context.WithCancel(context.Background())
-			_ = p.SubmitContext(ctx, JobFunc(func(context.Context) error {
-				cancel() // the job's context is cancelled as it fails
-				fail()
-				return Permanent(sentinel)
-			}))
-			synctest.Wait()
-			err := *got.Load()
-			if want := map[string]error{"panic": ErrJobPanic, "permanent": sentinel}[name]; !errors.Is(err, want) {
-				t.Fatalf("%s: OnJobFailed got %v, want %v", name, err, want)
-			}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		sentinel := errors.New("db down")
+		_ = p.SubmitContext(ctx, JobFunc(func(context.Context) error { return sentinel }))
+		time.Sleep(2 * time.Second) // cancelled during the 1h retry delay
+		synctest.Wait()
+		errp := got.Load()
+		if errp == nil {
+			t.Fatal("OnJobFailed not called")
+		}
+		if !errors.Is(*errp, sentinel) || !errors.Is(*errp, context.DeadlineExceeded) {
+			t.Fatalf("OnJobFailed got %v, want it to match the job's error and context.DeadlineExceeded", *errp)
 		}
 	})
 }

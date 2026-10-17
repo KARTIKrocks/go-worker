@@ -36,6 +36,10 @@ after the deadline counts as a success. Cancellation that comes from
 outside the attempt — the `SubmitWait` caller's context ending, a group being
 cancelled, `CloseWithTimeout` expiring — stops the retries.
 
+When a job fails and its context is cancelled, while the attempt runs or
+during the retry delay, the result matches both the job's error and
+`ctx.Err()`.
+
 ### Permanent errors
 
 Wrap an error with `Permanent` to fail the job immediately:
