@@ -9,9 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- A job that failed while its own context was cancelled reported `ctx.Err()`
-  instead of the error it returned, even with no retries left. The pool now
-  stops retrying and keeps the job's error.
+- A job that failed and whose context was then cancelled, during the attempt
+  or the retry delay, reported only `ctx.Err()` and lost the error it
+  returned. The result now matches both.
 
 ## [0.1.0] - 2026-09-29
 

@@ -36,8 +36,9 @@ after the deadline counts as a success. Cancellation that comes from
 outside the attempt — the `SubmitWait` caller's context ending, a group being
 cancelled, `CloseWithTimeout` expiring — stops the retries.
 
-_Changed in 0.2._ The job's own error is reported when its context is
-cancelled as it fails; before, the pool replaced it with `ctx.Err()`.
+When a job fails and its context is cancelled, while the attempt runs or
+during the retry delay, the result matches both the job's error and
+`ctx.Err()`.
 
 ### Permanent errors
 
@@ -61,7 +62,7 @@ error, and its message is unchanged. `Permanent(nil)` is `nil`.
 
 ## Retry delays
 
-The delay before retry _k_ (the first retry is _k_ = 1) is computed in three
+The delay before retry *k* (the first retry is *k* = 1) is computed in three
 steps:
 
 1. **Backoff.** With `WithRetryBackoff(true)` (the default), the delay is

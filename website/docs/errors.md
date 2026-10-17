@@ -54,7 +54,8 @@ Waiting operations return `ctx.Err()` — `context.Canceled` or
 - `SubmitContext`, `SubmitWait`, `SubmitJobWait`, `RateLimiter.Submit`, and
   `Future.Await`, when the caller's context ends,
 - a job's result, when its attempt timed out on the last attempt, or its
-  context was cancelled by the caller, a group, or a forced close.
+  context was cancelled by the caller, a group, or a forced close. If the job
+  returned its own error, the result matches that error too.
 
 ## Panics from constructors
 

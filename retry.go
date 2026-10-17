@@ -88,3 +88,13 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 	// select picks randomly when both are ready, so check ctx either way.
 	return ctx.Err()
 }
+
+// joinCtxErr reports a job that failed and was then cancelled: the result
+// matches both the job's error and ctxErr, unless the job's error already
+// wraps ctxErr.
+func joinCtxErr(jobErr, ctxErr error) error {
+	if errors.Is(jobErr, ctxErr) {
+		return jobErr
+	}
+	return errors.Join(jobErr, ctxErr)
+}
