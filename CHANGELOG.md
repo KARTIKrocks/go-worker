@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-19
+
 ### Fixed
 
 - A job that failed and whose context was then cancelled, during the attempt
@@ -121,6 +123,7 @@ Scheduler:
 - Full test suite with race detector coverage
 - Benchmarks for `Submit`, `SubmitWait`, `TrySubmit`, middleware
 
-[Unreleased]: https://github.com/KARTIKrocks/go-worker/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/KARTIKrocks/go-worker/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/KARTIKrocks/go-worker/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/KARTIKrocks/go-worker/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/KARTIKrocks/go-worker/releases/tag/v0.0.1
