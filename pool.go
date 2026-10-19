@@ -449,7 +449,7 @@ func (p *Pool) processJob(env jobEnvelope) (finalErr error) {
 		}
 
 		// Retrying cannot fix a permanent error or a panic (a bug). Checked
-		// before cancellation so these errors are never masked by ctx.Err().
+		// before cancellation so these errors are reported as they are.
 		// panicked, not errors.Is(ErrJobPanic): a job may return another
 		// pool's PanicError without having panicked itself.
 		if panicked || isPermanent(finalErr) {
@@ -457,8 +457,8 @@ func (p *Pool) processJob(env jobEnvelope) (finalErr error) {
 		}
 
 		// Don't retry once the job itself is cancelled (submitter or pool).
-		if ctx.Err() != nil {
-			finalErr = ctx.Err()
+		if err := ctx.Err(); err != nil {
+			finalErr = joinCtxErr(finalErr, err)
 			break
 		}
 
@@ -472,7 +472,7 @@ func (p *Pool) processJob(env jobEnvelope) (finalErr error) {
 			}
 
 			if err := sleepCtx(ctx, delay); err != nil {
-				finalErr = err
+				finalErr = joinCtxErr(finalErr, err)
 				break
 			}
 			// Count the retry only once it is actually going to run.

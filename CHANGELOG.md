@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A job that failed and whose context was then cancelled, during the attempt
+  or the retry delay, reported only `ctx.Err()` and lost the error it
+  returned. The result now matches both.
+
 ## [0.1.0] - 2026-09-29
 
 This release fixes a large number of concurrency and scheduling bugs found in a
