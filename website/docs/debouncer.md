@@ -27,9 +27,9 @@ for _, change := range changes {
 
 ## Trailing and leading edge
 
-| Constructor | Runs | Of a burst, runs |
-| --- | --- | --- |
-| `NewDebouncer(pool, delay)` | `delay` after the **last** submit | the last job submitted |
+| Constructor                        | Runs                                | Of a burst, runs        |
+| ---------------------------------- | ----------------------------------- | ----------------------- |
+| `NewDebouncer(pool, delay)`        | `delay` after the **last** submit   | the last job submitted  |
 | `NewDebouncerLeading(pool, delay)` | immediately on the **first** submit | the first job submitted |
 
 A leading-edge debouncer ignores further submits until `delay` passes with no
@@ -39,11 +39,11 @@ errors, for instance.
 
 ## Methods
 
-| Method | Effect |
-| --- | --- |
-| `Submit(job)` / `SubmitFunc(fn)` | submit with debouncing |
-| `Cancel()` | drop the pending job and reset the timer |
-| `Flush() error` | submit the pending job now, and return the submit error |
+| Method                           | Effect                                                  |
+| -------------------------------- | ------------------------------------------------------- |
+| `Submit(job)` / `SubmitFunc(fn)` | submit with debouncing                                  |
+| `Cancel()`                       | drop the pending job and reset the timer                |
+| `Flush() error`                  | submit the pending job now, and return the submit error |
 
 Call `Flush` during shutdown — before closing the pool — so a pending job is not
 lost:

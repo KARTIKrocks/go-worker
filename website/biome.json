@@ -56,6 +56,11 @@
       "allowComments": true
     }
   },
+  "markdown": {
+    "parser": {
+      "frontmatter": true
+    }
+  },
   "assist": {
     "actions": {
       "source": {

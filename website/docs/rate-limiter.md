@@ -43,10 +43,10 @@ rather than `10` per second.
 
 ## Submitting
 
-| Method | Without a token | Returns |
-| --- | --- | --- |
-| `Submit(ctx, job)` | waits for one, or for `ctx` to end | `nil`, `ctx.Err()`, a pool error, or `ErrLimiterStopped` |
-| `TrySubmit(job)` | returns `ErrRateLimited` | `nil`, `ErrRateLimited`, a pool error, or `ErrLimiterStopped` |
+| Method             | Without a token                    | Returns                                                       |
+| ------------------ | ---------------------------------- | ------------------------------------------------------------- |
+| `Submit(ctx, job)` | waits for one, or for `ctx` to end | `nil`, `ctx.Err()`, a pool error, or `ErrLimiterStopped`      |
+| `TrySubmit(job)`   | returns `ErrRateLimited`           | `nil`, `ErrRateLimited`, a pool error, or `ErrLimiterStopped` |
 
 `Submit` submits with [`SubmitContext`](./pool.md#bounded-waiting), so the job
 runs with a context derived from `ctx`. If `ctx` is cancelled after the job is

@@ -30,13 +30,13 @@ pool, _ := worker.NewPool(worker.WithHooks(worker.Hooks{
 
 ## When hooks fire
 
-| Hook | Fires | Receives |
-| --- | --- | --- |
-| `OnJobStart` | once per job, when a worker picks it up | the job |
-| `OnJobComplete` | once per job, when it finally succeeds | the job, total duration |
-| `OnJobFailed` | once per job, when it finally fails | the job, final error, total duration |
-| `OnWorkerStart` | when a worker goroutine starts | worker ID, `0` to `workers − 1` |
-| `OnWorkerStop` | when a worker goroutine exits | worker ID |
+| Hook            | Fires                                   | Receives                             |
+| --------------- | --------------------------------------- | ------------------------------------ |
+| `OnJobStart`    | once per job, when a worker picks it up | the job                              |
+| `OnJobComplete` | once per job, when it finally succeeds  | the job, total duration              |
+| `OnJobFailed`   | once per job, when it finally fails     | the job, final error, total duration |
+| `OnWorkerStart` | when a worker goroutine starts          | worker ID, `0` to `workers − 1`      |
+| `OnWorkerStop`  | when a worker goroutine exits           | worker ID                            |
 
 Job hooks fire **once per job**, not per attempt. The duration covers every
 attempt and the delays between them. Exactly one of `OnJobComplete` and

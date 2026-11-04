@@ -18,10 +18,10 @@ ticker.Start()
 defer ticker.Stop()
 ```
 
-| Constructor | First submit |
-| --- | --- |
-| `NewTicker(pool, interval, job)` | after one `interval` |
-| `NewTickerFunc(pool, interval, fn)` | after one `interval` |
+| Constructor                               | First submit                                  |
+| ----------------------------------------- | --------------------------------------------- |
+| `NewTicker(pool, interval, job)`          | after one `interval`                          |
+| `NewTickerFunc(pool, interval, fn)`       | after one `interval`                          |
 | `NewTickerImmediate(pool, interval, job)` | immediately on `Start`, then every `interval` |
 
 The constructors panic if `interval` is not positive. `Start` is idempotent.
@@ -42,10 +42,10 @@ stopping the ticker does not cancel them.
 
 ## Ticker or scheduler?
 
-| Need | Use |
-| --- | --- |
-| one job on a fixed interval | `Ticker` |
-| several named tasks | [Scheduler](./scheduler.md) |
-| cron expressions or wall-clock times | Scheduler |
-| no overlapping runs | Scheduler with `OverlapSkip` |
-| pause, trigger, or inspect at runtime | Scheduler |
+| Need                                  | Use                          |
+| ------------------------------------- | ---------------------------- |
+| one job on a fixed interval           | `Ticker`                     |
+| several named tasks                   | [Scheduler](./scheduler.md)  |
+| cron expressions or wall-clock times  | Scheduler                    |
+| no overlapping runs                   | Scheduler with `OverlapSkip` |
+| pause, trigger, or inspect at runtime | Scheduler                    |

@@ -23,20 +23,20 @@ pool, err := worker.NewPool(
 
 ## Options
 
-| Option | Default | Effect |
-| --- | --- | --- |
-| `WithWorkers(n)` | `4` | number of worker goroutines; must be at least 1 |
-| `WithQueueSize(n)` | `100` | capacity of the job queue; `0` means no buffer |
-| `WithJobTimeout(d)` | `0` (none) | maximum duration of **each attempt** |
-| `WithMaxRetries(n)` | `0` | how many times a failed job is retried |
-| `WithRetryDelay(d)` | `1s` | base delay before the first retry |
-| `WithRetryBackoff(enabled)` | `true` | double the delay after every attempt |
-| `WithMaxRetryDelay(d)` | `0` (no cap) | upper bound on any single retry delay |
-| `WithRetryJitter(fraction)` | `0` | randomly shorten each delay by up to this fraction, `0` to `1` |
-| `WithPanicHandler(fn)` | none | called with the job and the recovered value when a job panics |
-| `WithLogger(l)` | none | structured logger for pool events |
-| `WithHooks(h)` | none | lifecycle callbacks — see [Hooks](./hooks.md) |
-| `WithMiddleware(mw...)` | none | wrap every attempt — see [Middleware](./middleware.md) |
+| Option                      | Default      | Effect                                                         |
+| --------------------------- | ------------ | -------------------------------------------------------------- |
+| `WithWorkers(n)`            | `4`          | number of worker goroutines; must be at least 1                |
+| `WithQueueSize(n)`          | `100`        | capacity of the job queue; `0` means no buffer                 |
+| `WithJobTimeout(d)`         | `0` (none)   | maximum duration of **each attempt**                           |
+| `WithMaxRetries(n)`         | `0`          | how many times a failed job is retried                         |
+| `WithRetryDelay(d)`         | `1s`         | base delay before the first retry                              |
+| `WithRetryBackoff(enabled)` | `true`       | double the delay after every attempt                           |
+| `WithMaxRetryDelay(d)`      | `0` (no cap) | upper bound on any single retry delay                          |
+| `WithRetryJitter(fraction)` | `0`          | randomly shorten each delay by up to this fraction, `0` to `1` |
+| `WithPanicHandler(fn)`      | none         | called with the job and the recovered value when a job panics  |
+| `WithLogger(l)`             | none         | structured logger for pool events                              |
+| `WithHooks(h)`              | none         | lifecycle callbacks — see [Hooks](./hooks.md)                  |
+| `WithMiddleware(mw...)`     | none         | wrap every attempt — see [Middleware](./middleware.md)         |
 
 How the retry options combine is covered in [Retries and Panics](./retries.md).
 

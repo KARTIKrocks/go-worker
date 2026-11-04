@@ -8,14 +8,14 @@ description: Sentinel errors returned by go-worker, PanicError, Permanent errors
 
 ## Sentinel errors
 
-| Error | Returned by | Meaning |
-| --- | --- | --- |
-| `ErrPoolClosed` | every submit, and waiters on dropped jobs | the pool is closed or closing |
-| `ErrPoolFull` | `TrySubmit`, `TrySubmitJob`, `RateLimiter.TrySubmit` | the queue is full |
-| `ErrInvalidConfig` | `NewPool` | an option is out of range; wrapped with details |
-| `ErrJobPanic` | jobs that panicked | matched by every `*PanicError` |
-| `ErrRateLimited` | `RateLimiter.TrySubmit` | no token is available |
-| `ErrLimiterStopped` | `RateLimiter.Submit`, `RateLimiter.TrySubmit` | the rate limiter was stopped |
+| Error               | Returned by                                          | Meaning                                         |
+| ------------------- | ---------------------------------------------------- | ----------------------------------------------- |
+| `ErrPoolClosed`     | every submit, and waiters on dropped jobs            | the pool is closed or closing                   |
+| `ErrPoolFull`       | `TrySubmit`, `TrySubmitJob`, `RateLimiter.TrySubmit` | the queue is full                               |
+| `ErrInvalidConfig`  | `NewPool`                                            | an option is out of range; wrapped with details |
+| `ErrJobPanic`       | jobs that panicked                                   | matched by every `*PanicError`                  |
+| `ErrRateLimited`    | `RateLimiter.TrySubmit`                              | no token is available                           |
+| `ErrLimiterStopped` | `RateLimiter.Submit`, `RateLimiter.TrySubmit`        | the rate limiter was stopped                    |
 
 Match them with `errors.Is`:
 
@@ -35,10 +35,10 @@ A job's own error is returned unchanged by `SubmitWait`, futures, and groups —
 after all [retries](./retries.md) — so match it as you normally would.
 Two wrappers can appear around it:
 
-| Type | Created by | Notes |
-| --- | --- | --- |
-| `*PanicError` | the pool, when a job panics | matches `ErrJobPanic`; `Value` and `Stack` hold the panic; unwraps to `Value` if it is an error |
-| permanent error | `worker.Permanent(err)` | stops retries; transparent to `errors.Is` and `errors.As` |
+| Type            | Created by                  | Notes                                                                                           |
+| --------------- | --------------------------- | ----------------------------------------------------------------------------------------------- |
+| `*PanicError`   | the pool, when a job panics | matches `ErrJobPanic`; `Value` and `Stack` hold the panic; unwraps to `Value` if it is an error |
+| permanent error | `worker.Permanent(err)`     | stops retries; transparent to `errors.Is` and `errors.As`                                       |
 
 ```go
 if perr, ok := errors.AsType[*worker.PanicError](err); ok {

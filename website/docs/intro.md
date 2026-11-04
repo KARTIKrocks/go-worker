@@ -17,19 +17,19 @@ go get github.com/KARTIKrocks/go-worker
 
 ## What you get
 
-| | |
-| --- | --- |
-| **Worker pool** | A fixed number of goroutines pulling from a bounded queue |
-| **Retries** | Exponential backoff, a delay cap, jitter, per-attempt timeouts, and permanent errors |
-| **Panic recovery** | A panicking job fails with its stack trace; the worker keeps running |
-| **Graceful shutdown** | Drain everything on `Close`, or force-cancel after a timeout |
-| **Middleware & hooks** | Wrap every attempt, and observe job and worker lifecycles |
-| **Typed futures** | Generic async results with `SubmitTyped` and `Future[T]` |
-| **Groups & batches** | Fan-out/fan-in with all errors or cancel-on-first-error, and chunked bulk work |
-| **Scheduler** | Cron expressions, intervals, daily times, and one-shot tasks |
-| **Flow control** | Ticker, debouncer, throttler, and rate limiter |
-| **Metrics** | Atomic counters, success rate, and throughput |
-| **Zero dependencies** | Standard library only |
+|                        |                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------ |
+| **Worker pool**        | A fixed number of goroutines pulling from a bounded queue                            |
+| **Retries**            | Exponential backoff, a delay cap, jitter, per-attempt timeouts, and permanent errors |
+| **Panic recovery**     | A panicking job fails with its stack trace; the worker keeps running                 |
+| **Graceful shutdown**  | Drain everything on `Close`, or force-cancel after a timeout                         |
+| **Middleware & hooks** | Wrap every attempt, and observe job and worker lifecycles                            |
+| **Typed futures**      | Generic async results with `SubmitTyped` and `Future[T]`                             |
+| **Groups & batches**   | Fan-out/fan-in with all errors or cancel-on-first-error, and chunked bulk work       |
+| **Scheduler**          | Cron expressions, intervals, daily times, and one-shot tasks                         |
+| **Flow control**       | Ticker, debouncer, throttler, and rate limiter                                       |
+| **Metrics**            | Atomic counters, success rate, and throughput                                        |
+| **Zero dependencies**  | Standard library only                                                                |
 
 Everything is built on one `Pool`: groups, futures, the scheduler, and the
 flow-control helpers all submit their work to a pool you create and own, so
