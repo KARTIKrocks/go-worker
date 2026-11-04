@@ -50,12 +50,12 @@ If the window is already open, `SubmitTrailing` submits immediately.
 
 ## Methods
 
-| Method | Effect |
-| --- | --- |
-| `Submit(job) bool` | run now if the window is open; otherwise drop |
+| Method                | Effect                                                                |
+| --------------------- | --------------------------------------------------------------------- |
+| `Submit(job) bool`    | run now if the window is open; otherwise drop                         |
 | `SubmitTrailing(job)` | run now if the window is open; otherwise run at the end of the window |
-| `Force(job) error` | run now regardless, start a new window, drop any pending trailing job |
-| `Reset()` | open the window and drop any pending trailing job |
+| `Force(job) error`    | run now regardless, start a new window, drop any pending trailing job |
+| `Reset()`             | open the window and drop any pending trailing job                     |
 
 ## Things to know
 

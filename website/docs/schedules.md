@@ -33,16 +33,16 @@ The scheduler's convenience methods build the built-in schedules for you.
 * * * * *
 ```
 
-| Syntax | Example | Meaning |
-| --- | --- | --- |
-| `*` | `*` | every value |
-| value | `30` | exactly 30 |
-| range | `1-5` | 1 through 5 |
-| list | `1,15,30` | each listed value |
-| step | `*/15` | every 15th value |
-| range with step | `0-30/10` | 0, 10, 20, 30 |
-| start with step | `5/20` | 5, 25, 45 — from 5 to the maximum |
-| names | `MON-FRI`, `JAN,JUL` | case-insensitive month and weekday names |
+| Syntax          | Example              | Meaning                                  |
+| --------------- | -------------------- | ---------------------------------------- |
+| `*`             | `*`                  | every value                              |
+| value           | `30`                 | exactly 30                               |
+| range           | `1-5`                | 1 through 5                              |
+| list            | `1,15,30`            | each listed value                        |
+| step            | `*/15`               | every 15th value                         |
+| range with step | `0-30/10`            | 0, 10, 20, 30                            |
+| start with step | `5/20`               | 5, 25, 45 — from 5 to the maximum        |
+| names           | `MON-FRI`, `JAN,JUL` | case-insensitive month and weekday names |
 
 ```text
 */15 * * * *     every 15 minutes
@@ -53,18 +53,18 @@ The scheduler's convenience methods build the built-in schedules for you.
 
 ### Macros
 
-| Macro | Equivalent |
-| --- | --- |
+| Macro                  | Equivalent  |
+| ---------------------- | ----------- |
 | `@yearly`, `@annually` | `0 0 1 1 *` |
-| `@monthly` | `0 0 1 * *` |
-| `@weekly` | `0 0 * * 0` |
-| `@daily`, `@midnight` | `0 0 * * *` |
-| `@hourly` | `0 * * * *` |
+| `@monthly`             | `0 0 1 * *` |
+| `@weekly`              | `0 0 * * 0` |
+| `@daily`, `@midnight`  | `0 0 * * *` |
+| `@hourly`              | `0 * * * *` |
 
 ### Day of month and day of week
 
 As in standard cron, when **both** day fields are restricted, a day matches if
-**either** does: `0 0 1 * MON` runs on the 1st of the month *and* on every
+**either** does: `0 0 1 * MON` runs on the 1st of the month _and_ on every
 Monday. A field starting with `*` — including `*/2` — counts as unrestricted
 for this rule.
 
@@ -89,11 +89,11 @@ sched.DailyFunc("backup", []string{"02:00", "14:00"}, backup)
 
 ## Intervals
 
-| Schedule | Fires |
-| --- | --- |
-| `IntervalSchedule{Interval: d}` | every `d`, measured from when the previous run was dispatched — used by `Every` |
-| `FixedTimeSchedule{Start: t, Interval: d}` | at `t`, then every `d` after it — used by `At` |
-| `OnceSchedule{At: t}` | once at `t` — used by `Once` |
+| Schedule                                   | Fires                                                                           |
+| ------------------------------------------ | ------------------------------------------------------------------------------- |
+| `IntervalSchedule{Interval: d}`            | every `d`, measured from when the previous run was dispatched — used by `Every` |
+| `FixedTimeSchedule{Start: t, Interval: d}` | at `t`, then every `d` after it — used by `At`                                  |
+| `OnceSchedule{At: t}`                      | once at `t` — used by `Once`                                                    |
 
 `FixedTimeSchedule` keeps runs aligned to `Start` — every 15 minutes past the
 hour stays on the quarter hour. A non-positive interval on `FixedTimeSchedule`

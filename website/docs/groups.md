@@ -9,11 +9,11 @@ description: Fan-out and fan-in on a go-worker pool — Group collects every err
 Groups run several functions on a pool and wait for all of them. There are two,
 differing only in what happens when a function fails.
 
-| | `Group` | `ErrorGroup` |
-| --- | --- | --- |
-| On the first error | keeps going | cancels the group's context |
-| Wait returns | every error (`WaitAll`) or the first (`Wait`) | the first error |
-| Modeled on | — | `golang.org/x/sync/errgroup` |
+|                    | `Group`                                       | `ErrorGroup`                 |
+| ------------------ | --------------------------------------------- | ---------------------------- |
+| On the first error | keeps going                                   | cancels the group's context  |
+| Wait returns       | every error (`WaitAll`) or the first (`Wait`) | the first error              |
+| Modeled on         | —                                             | `golang.org/x/sync/errgroup` |
 
 Unlike `errgroup`, the functions run on the pool's workers, so the pool's
 concurrency limit, [job timeout](./configuration.md#job-timeout),

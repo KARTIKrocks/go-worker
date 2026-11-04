@@ -31,14 +31,14 @@ defer sched.Stop()
 
 ## Adding tasks
 
-| Method | Runs |
-| --- | --- |
-| `Every` / `EveryFunc(name, interval, ...)` | every `interval` |
-| `Cron` / `CronFunc(name, expr, ...)` | on a [cron expression](./schedules.md#cron-expressions); returns a parse error |
-| `Daily` / `DailyFunc(name, times, ...)` | at `"HH:MM"` times each day; returns a parse error |
-| `Once` / `OnceFunc(name, at, ...)` | once, at `at` |
-| `At(name, start, interval, job, ...)` | at `start`, then every `interval` |
-| `Schedule` / `ScheduleFunc(name, schedule, ...)` | on any [`Schedule`](./schedules.md#custom-schedules) |
+| Method                                           | Runs                                                                           |
+| ------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `Every` / `EveryFunc(name, interval, ...)`       | every `interval`                                                               |
+| `Cron` / `CronFunc(name, expr, ...)`             | on a [cron expression](./schedules.md#cron-expressions); returns a parse error |
+| `Daily` / `DailyFunc(name, times, ...)`          | at `"HH:MM"` times each day; returns a parse error                             |
+| `Once` / `OnceFunc(name, at, ...)`               | once, at `at`                                                                  |
+| `At(name, start, interval, job, ...)`            | at `start`, then every `interval`                                              |
+| `Schedule` / `ScheduleFunc(name, schedule, ...)` | on any [`Schedule`](./schedules.md#custom-schedules)                           |
 
 Methods taking a `Job` have a `Func` variant taking a function. The methods
 that cannot fail return the scheduler, so they chain:
@@ -56,12 +56,12 @@ Tasks can be added before or after `Start`.
 
 ## Task options
 
-| Option | Effect |
-| --- | --- |
+| Option                 | Effect                                                                                       |
+| ---------------------- | -------------------------------------------------------------------------------------------- |
 | `WithOverlapPolicy(p)` | what to do when a run is due while the previous one is still running — default `OverlapSkip` |
-| `WithJitter(d)` | delay each run by a random amount up to `d` |
-| `WithMaxRuns(n)` | stop after `n` runs; `0` means unlimited |
-| `WithRunImmediate()` | also run as soon as the scheduler starts |
+| `WithJitter(d)`        | delay each run by a random amount up to `d`                                                  |
+| `WithMaxRuns(n)`       | stop after `n` runs; `0` means unlimited                                                     |
+| `WithRunImmediate()`   | also run as soon as the scheduler starts                                                     |
 
 ```go
 sched.EveryFunc("sync", time.Hour, syncInventory,
@@ -73,10 +73,10 @@ sched.EveryFunc("sync", time.Hour, syncInventory,
 
 ### Overlap policies
 
-| Policy | When a run is due and the previous one is still running |
-| --- | --- |
-| `OverlapSkip` | skip this run (the default) |
-| `OverlapAllow` | start it anyway, so runs overlap |
+| Policy         | When a run is due and the previous one is still running                    |
+| -------------- | -------------------------------------------------------------------------- |
+| `OverlapSkip`  | skip this run (the default)                                                |
+| `OverlapAllow` | start it anyway, so runs overlap                                           |
 | `OverlapQueue` | run it as soon as the current one finishes; up to 100 queued runs per task |
 
 `OverlapSkip` is the safe default for jobs that should never run twice at once,
@@ -117,15 +117,15 @@ info := sched.TaskInfo("report") // nil if there is no such task
 fmt.Println(info.Next, info.LastRun, info.LastError, info.SuccessRate())
 ```
 
-| Field | Meaning |
-| --- | --- |
-| `Name` | task name |
-| `Next` | when it is next due |
-| `Running` | whether a run is in progress |
-| `Paused` | whether it is paused |
-| `RunCount`, `MaxRuns` | runs started, and the `WithMaxRuns` limit |
-| `LastRun`, `LastDuration`, `LastError` | the most recent finished run |
-| `TotalRuns`, `TotalErrors` | finished runs, and how many failed |
+| Field                                  | Meaning                                   |
+| -------------------------------------- | ----------------------------------------- |
+| `Name`                                 | task name                                 |
+| `Next`                                 | when it is next due                       |
+| `Running`                              | whether a run is in progress              |
+| `Paused`                               | whether it is paused                      |
+| `RunCount`, `MaxRuns`                  | runs started, and the `WithMaxRuns` limit |
+| `LastRun`, `LastDuration`, `LastError` | the most recent finished run              |
+| `TotalRuns`, `TotalErrors`             | finished runs, and how many failed        |
 
 `SuccessRate()` is the fraction of finished runs that succeeded, or `0` before
 the first one finishes.
@@ -141,12 +141,12 @@ sched := worker.NewScheduler(pool,
 )
 ```
 
-| Option | Default | Effect |
-| --- | --- | --- |
-| `WithSchedulerLogger(l)` | none | logs start, stop, and failed runs |
-| `WithTickInterval(d)` | `100ms` | how often due tasks are checked — the scheduler's precision |
-| `WithOnTaskStart(fn)` | none | called when a run starts |
-| `WithOnTaskEnd(fn)` | none | called when a run finishes, with its error and duration |
+| Option                   | Default | Effect                                                      |
+| ------------------------ | ------- | ----------------------------------------------------------- |
+| `WithSchedulerLogger(l)` | none    | logs start, stop, and failed runs                           |
+| `WithTickInterval(d)`    | `100ms` | how often due tasks are checked — the scheduler's precision |
+| `WithOnTaskStart(fn)`    | none    | called when a run starts                                    |
+| `WithOnTaskEnd(fn)`      | none    | called when a run finishes, with its error and duration     |
 
 The task callbacks are recovered if they panic.
 

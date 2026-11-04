@@ -19,17 +19,17 @@ fmt.Printf("avg=%v success=%.1f%% throughput=%.1f/s\n",
 
 ## Fields
 
-| Field | Meaning |
-| --- | --- |
-| `JobsSubmitted` | jobs accepted into the queue |
-| `JobsCompleted` | jobs that finished without error |
-| `JobsFailed` | jobs that finished with an error, after all retries |
-| `JobsRetried` | retry attempts that ran |
-| `JobsPanicked` | attempts that panicked |
-| `ActiveWorkers` | workers running a job right now |
-| `QueueLength` | jobs waiting in the queue right now |
+| Field           | Meaning                                                        |
+| --------------- | -------------------------------------------------------------- |
+| `JobsSubmitted` | jobs accepted into the queue                                   |
+| `JobsCompleted` | jobs that finished without error                               |
+| `JobsFailed`    | jobs that finished with an error, after all retries            |
+| `JobsRetried`   | retry attempts that ran                                        |
+| `JobsPanicked`  | attempts that panicked                                         |
+| `ActiveWorkers` | workers running a job right now                                |
+| `QueueLength`   | jobs waiting in the queue right now                            |
 | `TotalDuration` | summed duration of finished jobs, including retries and delays |
-| `Elapsed` | time since the pool was created |
+| `Elapsed`       | time since the pool was created                                |
 
 `JobsCompleted` and `JobsFailed` count **jobs**, not attempts: a job that fails
 twice and then succeeds adds 2 to `JobsRetried` and 1 to `JobsCompleted`. A
@@ -37,11 +37,11 @@ panicking job counts in both `JobsPanicked` and `JobsFailed`.
 
 ## Derived values
 
-| Method | Returns |
-| --- | --- |
-| `AverageJobDuration()` | `TotalDuration` divided by finished jobs; `0` if none |
-| `SuccessRate()` | completed ÷ finished, from `0.0` to `1.0`; `1.0` if none have finished |
-| `Throughput()` | completed jobs per second since the pool was created |
+| Method                 | Returns                                                                |
+| ---------------------- | ---------------------------------------------------------------------- |
+| `AverageJobDuration()` | `TotalDuration` divided by finished jobs; `0` if none                  |
+| `SuccessRate()`        | completed ÷ finished, from `0.0` to `1.0`; `1.0` if none have finished |
+| `Throughput()`         | completed jobs per second since the pool was created                   |
 
 `Throughput` averages over the pool's whole life. For a current rate, take two
 snapshots and divide the difference by the time between them.

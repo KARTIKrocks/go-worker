@@ -23,11 +23,11 @@ pool, _ := worker.NewPool(
 
 A failed job is retried unless:
 
-| Condition | Why |
-| --- | --- |
-| it returned an error wrapped with `worker.Permanent` | you said retrying will not help |
-| it panicked | a panic is a bug; running it again rarely fixes it |
-| its context was cancelled | the caller gave up, or the pool is force-closing |
+| Condition                                            | Why                                                |
+| ---------------------------------------------------- | -------------------------------------------------- |
+| it returned an error wrapped with `worker.Permanent` | you said retrying will not help                    |
+| it panicked                                          | a panic is a bug; running it again rarely fixes it |
+| its context was cancelled                            | the caller gave up, or the pool is force-closing   |
 
 A **timed-out attempt is retried** if it returns an error: `WithJobTimeout`
 cancels each attempt's context separately, so a slow attempt that returns
@@ -80,11 +80,11 @@ many jobs can fail at once — a shared dependency going down — so their retri
 do not all hit it again in the same instant.
 
 | Retry | Delay (1s, backoff, 5s cap) | With 0.5 jitter |
-| --- | --- | --- |
-| 1 | 1s | 0.5s – 1s |
-| 2 | 2s | 1s – 2s |
-| 3 | 4s | 2s – 4s |
-| 4 | 5s | 2.5s – 5s |
+| ----- | --------------------------- | --------------- |
+| 1     | 1s                          | 0.5s – 1s       |
+| 2     | 2s                          | 1s – 2s         |
+| 3     | 4s                          | 2s – 4s         |
+| 4     | 5s                          | 2.5s – 5s       |
 
 The wait between attempts is interrupted if the job's context is cancelled.
 
@@ -112,9 +112,9 @@ if perr, ok := errors.AsType[*worker.PanicError](err); ok {
 }
 ```
 
-| Field | Contents |
-| --- | --- |
-| `Value` | the value passed to `panic` |
+| Field   | Contents                                   |
+| ------- | ------------------------------------------ |
+| `Value` | the value passed to `panic`                |
 | `Stack` | the stack trace of the panicking goroutine |
 
 A `*PanicError` matches `worker.ErrJobPanic` with `errors.Is`, and unwraps to

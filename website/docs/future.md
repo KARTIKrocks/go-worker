@@ -68,13 +68,13 @@ If one failure should cancel the others, use an
 
 ## How the result is decided
 
-| Outcome | `Await` returns |
-| --- | --- |
-| success | the value, `nil` |
-| failure after all retries | the value from the **final** attempt, its error |
-| panic | the zero value, a `*PanicError` (matches `ErrJobPanic`) |
-| pool closed before it could be queued | the zero value, `ErrPoolClosed` |
-| dropped by `CloseWithTimeout` | the zero value, `ErrPoolClosed` |
+| Outcome                               | `Await` returns                                         |
+| ------------------------------------- | ------------------------------------------------------- |
+| success                               | the value, `nil`                                        |
+| failure after all retries             | the value from the **final** attempt, its error         |
+| panic                                 | the zero value, a `*PanicError` (matches `ErrJobPanic`) |
+| pool closed before it could be queued | the zero value, `ErrPoolClosed`                         |
+| dropped by `CloseWithTimeout`         | the zero value, `ErrPoolClosed`                         |
 
 With [retries](./retries.md) enabled, earlier attempts' values are discarded;
 only the attempt that decides the job's outcome sets the result.

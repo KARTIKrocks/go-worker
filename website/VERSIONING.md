@@ -7,8 +7,8 @@ tree, so this site follows five rules.
 
 ### 1. Snapshot when a release changes documented behaviour — not on every release
 
-A snapshot exists to answer one question: *what was true before this release
-changed it?* If nothing changed, the snapshot is a byte-identical copy of every
+A snapshot exists to answer one question: _what was true before this release
+changed it?_ If nothing changed, the snapshot is a byte-identical copy of every
 page that has to be maintained forever.
 
 **The test:** does this release make an existing page **wrong for someone on the
@@ -40,12 +40,12 @@ snapshot tells you what existed, a marker tells you what upgrading buys you.
 The convention is plain Markdown, so it needs no components and survives being
 copied into a snapshot:
 
-| Situation | Write |
-| --- | --- |
-| New row in an API table | append `_0.2+_` to the description cell |
-| New option or behaviour in prose | open the paragraph with `_Added in 0.2._` |
-| New member inside a code block | trailing `// 0.2+` comment |
-| Behaviour that changed | `_Changed in 0.2._` plus one line on what it was before |
+| Situation                        | Write                                                   |
+| -------------------------------- | ------------------------------------------------------- |
+| New row in an API table          | append `_0.2+_` to the description cell                 |
+| New option or behaviour in prose | open the paragraph with `_Added in 0.2._`               |
+| New member inside a code block   | trailing `// 0.2+` comment                              |
+| Behaviour that changed           | `_Changed in 0.2._` plus one line on what it was before |
 
 Markers use `MAJOR.MINOR` — `0.2`, not `v0.2.0` — so they match snapshot names
 and stay greppable. Drop a marker once it names a version older than the oldest
@@ -74,10 +74,10 @@ obligations, not release count.
 
 ### 5. `docs/` is the future, not the present
 
-| Directory | Serves | URL |
-| --- | --- | --- |
-| `docs/` | **Next** — unreleased, tracks `main` | `/docs/next/` |
-| `versioned_docs/version-0.1/` | the current release | `/docs/` |
+| Directory                     | Serves                               | URL           |
+| ----------------------------- | ------------------------------------ | ------------- |
+| `docs/`                       | **Next** — unreleased, tracks `main` | `/docs/next/` |
+| `versioned_docs/version-0.1/` | the current release                  | `/docs/`      |
 
 A reader who lands on `/docs/` sees released behaviour. Someone who wants what's
 on `main` opens `/docs/next/`, which carries an "unreleased" banner.

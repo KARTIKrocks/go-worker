@@ -52,11 +52,11 @@ pool.SubmitJob(&ResizeImage{ID: "img-42", Width: 800})
 
 ## Ways to submit
 
-| Method | When the queue is full | Returns | Job's context |
-| --- | --- | --- | --- |
-| `Submit(fn)` / `SubmitJob(job)` | waits for space | once enqueued | independent |
-| `TrySubmit(fn)` / `TrySubmitJob(job)` | returns `ErrPoolFull` | immediately | independent |
-| `SubmitContext(ctx, job)` | waits for space or `ctx` | once enqueued | derived from `ctx` |
+| Method                                            | When the queue is full   | Returns                               | Job's context      |
+| ------------------------------------------------- | ------------------------ | ------------------------------------- | ------------------ |
+| `Submit(fn)` / `SubmitJob(job)`                   | waits for space          | once enqueued                         | independent        |
+| `TrySubmit(fn)` / `TrySubmitJob(job)`             | returns `ErrPoolFull`    | immediately                           | independent        |
+| `SubmitContext(ctx, job)`                         | waits for space or `ctx` | once enqueued                         | derived from `ctx` |
 | `SubmitWait(ctx, fn)` / `SubmitJobWait(ctx, job)` | waits for space or `ctx` | when the job finishes, with its error | derived from `ctx` |
 
 Every method returns `ErrPoolClosed` once the pool is closing, including a

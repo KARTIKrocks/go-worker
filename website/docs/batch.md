@@ -30,10 +30,10 @@ slices still share that data with the originals.
 
 ## Fail fast or collect everything
 
-| Method | Runs chunks with | On a failed chunk | Returns |
-| --- | --- | --- | --- |
-| `Process(ctx)` | an [`ErrorGroup`](./groups.md#errorgroup) | cancels the remaining chunks | the first error |
-| `ProcessAll(ctx)` | a [`Group`](./groups.md#group) | keeps going | every error |
+| Method            | Runs chunks with                          | On a failed chunk            | Returns         |
+| ----------------- | ----------------------------------------- | ---------------------------- | --------------- |
+| `Process(ctx)`    | an [`ErrorGroup`](./groups.md#errorgroup) | cancels the remaining chunks | the first error |
+| `ProcessAll(ctx)` | a [`Group`](./groups.md#group)            | keeps going                  | every error     |
 
 Use `Process` when one failure should stop the rest. It is not
 a transaction: chunks that already ran, or are running when the context is
